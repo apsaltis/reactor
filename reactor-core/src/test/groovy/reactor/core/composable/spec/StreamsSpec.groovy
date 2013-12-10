@@ -76,6 +76,7 @@ class StreamsSpec extends Specification {
       'the last value is retrieved'
       def last = s.last().tap()
       s.flush()
+	  println s.debug()
 
     then:
       'first and last'
@@ -184,7 +185,7 @@ class StreamsSpec extends Specification {
       def error
       def value = s.tap()
       s.when(Exception, consumer { error = it })
-      parent.compose().consume(s)
+      parent.compose().connect(s)
 
     when:
       'the parent accepts a value'
@@ -227,27 +228,37 @@ class StreamsSpec extends Specification {
       last.get() == 5
   }
 
+  def 'When the accepted event is Iterable, split can iterate over values'() {
+    given:
+      'a composable with a known number of values'
+      Deferred<Iterable<String>, Stream<Iterable<String>>> d = Streams.<Iterable<String>>defer().get()
+      Stream<String> composable = d.compose().split()
+
+    when:
+      'accept list of Strings'
+      def tap = composable.tap()
+      d.accept(['a','b','c'])
+
+    then:
+      'its value is the last of the initial values'
+      tap.get() == 'c'
+
+  }
+
   def 'When the number of values is unknown, last is never updated'() {
     given:
       'a composable that will accept an unknown number of values'
-      Deferred d = Streams.defer().synchronousDispatcher().get()
+      Deferred d = Streams.defer().get()
       Stream composable = d.compose()
 
     when:
       'last is retrieved'
-      def last = composable.last().tap()
+       composable.last().tap()
 
     then:
-      'its value is unknown'
-      last.get() == null
+	    "can't call last() on unbounded stream"
+      thrown(IllegalStateException)
 
-    when:
-      'a value is accepted'
-      d.accept(1)
-
-    then:
-      "last's value is still unknown"
-      last.get() == null
   }
 
   def 'Last value of a batch is accessible'() {
@@ -257,17 +268,9 @@ class StreamsSpec extends Specification {
       Stream composable = d.compose()
 
     when:
-      'last is retrieved'
-      Stream last = composable.last()
-
-    then:
-      'its value is unknown'
-      last.tap().get() == null
-
-    when:
       'the expected accept count is set and that number of values is accepted'
       def batched = composable.batch(3)
-      last = batched.last()
+      def last = batched.last()
       def tap = last.tap()
       d.accept(1)
       d.accept(2)
@@ -283,6 +286,21 @@ class StreamsSpec extends Specification {
       'a source composable with a mapping function'
       Deferred source = Streams.defer().get()
       Stream mapped = source.compose().map(function { it * 2 })
+
+    when:
+      'the source accepts a value'
+      def value = mapped.tap()
+      source.accept(1)
+
+    then:
+      'the value is mapped'
+      value.get() == 2
+  }
+  def "A Stream's values can be flat mapped"() {
+    given:
+      'a source composable with a mapping function'
+      Deferred source = Streams.<Integer>defer().get()
+      Stream<Integer> mapped = source.compose().flatMap(function { Streams.<Integer>defer(it * 2).get().compose() })
 
     when:
       'the source accepts a value'
@@ -392,6 +410,7 @@ class StreamsSpec extends Specification {
       'a consumer is registered'
       def values = []
       reduced.consume(consumer { values << it }).flush()
+	  println reduced.debug()
 
     then:
       'the consumer only receives the final value'
@@ -562,6 +581,7 @@ class StreamsSpec extends Specification {
           get()
       Stream tail = head.compose().collect()
       tail.consume(consumer { List<Integer> ints ->
+	      println ints.size()
         sum.addAndGet(ints.size())
         latch.countDown()
       })
