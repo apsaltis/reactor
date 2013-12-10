@@ -13,21 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.operations;
+package reactor.core.action;
 
 import reactor.core.Reactor;
 import reactor.event.Event;
 import reactor.event.registry.Registration;
 import reactor.function.Consumer;
-import reactor.operations.BatchOperation;
-import reactor.operations.Operation;
-
-import java.util.List;
 
 /**
  * @author Stephane Maldini
  */
-public abstract class OperationUtils {
+public abstract class ActionUtils {
 
 
 	public static String browseReactor(Reactor reactor, Object successKey, Object errorKey) {
@@ -39,51 +35,51 @@ public abstract class OperationUtils {
 	}
 
 	public static String browseReactor(Reactor reactor) {
-		OperationVisitor operationVisitor = new OperationVisitor(reactor, true);
-		operationVisitor.loopOperations(reactor.getConsumerRegistry(), 1, "accept");
-		return operationVisitor.toString();
+		ActionVisitor actionVisitor = new ActionVisitor(reactor, true);
+		actionVisitor.loopActions(reactor.getConsumerRegistry(), 1, "accept");
+		return actionVisitor.toString();
 	}
 
 	public static String browseReactor(Reactor reactor, Object successKey, Object failureKey,
 	                                   Object flushKey) {
-		OperationVisitor operationVisitor = new OperationVisitor(reactor, true);
-		operationVisitor.drawReactorConsumers(reactor, successKey, failureKey, flushKey, 1);
-		return operationVisitor.toString();
+		ActionVisitor actionVisitor = new ActionVisitor(reactor, true);
+		actionVisitor.drawReactorConsumers(reactor, successKey, failureKey, flushKey, 1);
+		return actionVisitor.toString();
 	}
 
-	public static class OperationVisitor {
+	public static class ActionVisitor {
 
 		final private boolean       visitFailures;
 		final private StringBuilder appender;
 
-		private OperationVisitor(Reactor reactor, boolean visitFailures) {
+		private ActionVisitor(Reactor reactor, boolean visitFailures) {
 			this.appender = new StringBuilder("\nreactor(" + reactor.getId() + ")");
 			this.visitFailures = visitFailures;
 		}
 
-		private OperationVisitor(Reactor reactor) {
+		private ActionVisitor(Reactor reactor) {
 			this(reactor, false);
 		}
 
-		private OperationVisitor drawReactorConsumers(Reactor reactor, Object successKey, Object failureKey, Object flushKey,
+		private ActionVisitor drawReactorConsumers(Reactor reactor, Object successKey, Object failureKey, Object flushKey,
 		                                              int d) {
 
 			if (successKey != null) {
-				loopOperations(reactor.getConsumerRegistry().select(successKey), d, "accept");
+				loopActions(reactor.getConsumerRegistry().select(successKey), d, "accept");
 			}
 
 			if (flushKey != null) {
-				loopOperations(reactor.getConsumerRegistry().select(flushKey), d, "flush");
+				loopActions(reactor.getConsumerRegistry().select(flushKey), d, "flush");
 			}
 
 			if (visitFailures && failureKey != null)
-				loopOperations(reactor.getConsumerRegistry().select(failureKey), d, "fail");
+				loopActions(reactor.getConsumerRegistry().select(failureKey), d, "fail");
 
 			return this;
 		}
 
-		private void loopOperations(Iterable<Registration<? extends Consumer<? extends Event<?>>>> operations, int d,
-		                            String marker) {
+		private void loopActions(Iterable<Registration<? extends Consumer<? extends Event<?>>>> operations, int d,
+		                         String marker) {
 			for (Registration<?> registration : operations) {
 
 				appender.append("\n");
@@ -96,8 +92,8 @@ public abstract class OperationUtils {
 								.getClass()
 								.getSimpleName());
 
-				if (Operation.class.isAssignableFrom(registration.getObject().getClass())) {
-					Operation<?> operation = ((Operation) registration.getObject());
+				if (Action.class.isAssignableFrom(registration.getObject().getClass())) {
+					Action<?> operation = ((Action) registration.getObject());
 
 					renderBatch(operation, d);
 					renderFilter(operation, d);
@@ -114,31 +110,29 @@ public abstract class OperationUtils {
 		}
 
 		private void renderFilter(Object consumer, int d) {
-			if (FilterOperation.class.isAssignableFrom(consumer.getClass())) {
-				FilterOperation operation = (FilterOperation) consumer;
+			if (FilterAction.class.isAssignableFrom(consumer.getClass())) {
+				FilterAction operation = (FilterAction) consumer;
 
 				if (operation.getElseObservable() != null) {
-					loopOperations(((Reactor) operation.getElseObservable()).getConsumerRegistry()
-							.select(operation.getElseSuccess()),
-							d + 1, "else");
+					loopActions(((Reactor)operation.getElseObservable()).getConsumerRegistry()
+					                                                    .select(operation.getElseSuccess()),
+					            d + 1, "else");
 				}
 			}
 		}
 
 
 		private void renderBatch(Object consumer, int d) {
-			if (BatchOperation.class.isAssignableFrom(consumer.getClass())) {
-				BatchOperation operation = (BatchOperation) consumer;
+			if (BatchAction.class.isAssignableFrom(consumer.getClass())) {
+				BatchAction operation = (BatchAction) consumer;
 				appender.append(" accepted:" + operation.getAcceptCount());
 				appender.append("|errors:" + operation.getErrorCount());
 				appender.append("|batchSize:" + operation.getBatchSize());
 
-				loopOperations(((Reactor) operation.getObservable()).getConsumerRegistry().select(operation.getFlushKey()),
-						d + 1, "flush");
-				loopOperations(((Reactor) operation.getObservable()).getConsumerRegistry().select(operation.getFirstKey()),
-						d + 1, "first");
-				loopOperations(((Reactor) operation.getObservable()).getConsumerRegistry().select(operation.getLastKey()),
-						d + 1, "last");
+				loopActions(((Reactor)operation.getObservable()).getConsumerRegistry().select(operation.getFirstKey()),
+				            d + 1, "first");
+				loopActions(((Reactor)operation.getObservable()).getConsumerRegistry().select(operation.getFlushKey()),
+				            d + 1, "flush");
 			}
 		}
 

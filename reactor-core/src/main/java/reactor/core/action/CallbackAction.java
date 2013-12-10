@@ -13,22 +13,27 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.operations;
+package reactor.core.action;
 
 import reactor.core.Observable;
 import reactor.event.Event;
+import reactor.function.Consumer;
 
 /**
-* @author Stephane Maldini
-*/
-public class ConnectOperation<T> extends BaseOperation<T> {
+ * @author Stephane Maldini
+ */
+public class CallbackAction<T> extends Action<T> {
 
-	public ConnectOperation(Observable observable, Object successKey, Object failureKey) {
-		super(observable, successKey, failureKey);
+	private final Consumer<T> consumer;
+
+	public CallbackAction(Consumer<T> consumer, Observable d, Object failureKey) {
+		super(d, null, failureKey);
+		this.consumer = consumer;
 	}
 
 	@Override
-	public void doOperation(Event<T> event) {
-		notifyValue(event);
+	public void doAccept(Event<T> value) {
+		consumer.accept(value.getData());
 	}
+
 }

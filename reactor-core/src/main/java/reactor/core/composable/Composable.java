@@ -16,16 +16,15 @@
 
 package reactor.core.composable;
 
+import reactor.core.action.*;
 import reactor.core.Observable;
 import reactor.core.Reactor;
 import reactor.event.Event;
-import reactor.event.dispatch.Dispatcher;
 import reactor.event.selector.Selector;
 import reactor.event.selector.Selectors;
 import reactor.function.Consumer;
 import reactor.function.Function;
 import reactor.function.Predicate;
-import reactor.operations.*;
 import reactor.tuple.Tuple2;
 import reactor.util.Assert;
 
@@ -42,7 +41,7 @@ import javax.annotation.Nullable;
  * @author Jon Brisbin
  * @author Andy Wilkinson
  */
-public abstract class Composable<T> implements OperationPipe<T> {
+public abstract class Composable<T> implements Pipeline<T> {
 
 	private final Tuple2<Selector, Object> accept;
 	private final Tuple2<Selector, Object> error = Selectors.$();
@@ -51,27 +50,22 @@ public abstract class Composable<T> implements OperationPipe<T> {
 	private final Observable    events;
 	private final Composable<?> parent;
 
-	protected <U> Composable(@Nullable Dispatcher dispatcher, @Nullable Composable<U> parent) {
-		Assert.state(dispatcher != null || parent != null, "One of 'dispatcher' or 'parent'  cannot be null.");
-		this.events = parent == null ?
-				new Reactor(dispatcher) :
-				new Reactor(dispatcher,
-						((Reactor) parent.getObservable()).getEventRouter(),
-						((Reactor) parent.getObservable()).getConsumerRegistry());
-
-		this.parent = parent;
-		this.accept = Selectors.$();
-		if (parent != null) {
-			events.on(parent.error.getT1(),
-					new ConnectOperation<Throwable>(events, error.getT2(), null));
-		}
+	protected <U> Composable(@Nullable Observable observable, @Nullable Composable<U> parent) {
+		this(observable, parent, null);
 	}
 
-	protected Composable(@Nonnull Observable observable, @Nullable Tuple2<Selector, Object> acceptSelector) {
-		Assert.notNull(observable, "'observable' cannot be null.");
-		this.events = observable;
+
+	protected <U> Composable(@Nullable Observable observable, @Nullable Composable<U> parent,
+	                         @Nullable Tuple2<Selector, Object> acceptSelector) {
+		Assert.state(observable != null || parent != null, "One of 'observable' or 'parent'  cannot be null.");
+		this.parent = parent;
+		this.events = parent == null ? observable : parent.events;
 		this.accept = null == acceptSelector ? Selectors.$() : acceptSelector;
-		this.parent = null;
+
+		if (parent != null) {
+			events.on(parent.error.getT1(),
+					new ConnectAction<Throwable>(events, error.getT2(), null));
+		}
 	}
 
 
@@ -85,9 +79,9 @@ public abstract class Composable<T> implements OperationPipe<T> {
 	 */
 	public <E extends Throwable> Composable<T> when(@Nonnull final Class<E> exceptionType,
 	                                                @Nonnull final Consumer<E> onError) {
-		this.events.on(error.getT1(), new BaseOperation<E>(getObservable(), getAccept()) {
+		this.events.on(error.getT1(), new Action<E>(getObservable(), getAccept()) {
 			@Override
-			protected void doOperation(Event<E> e) {
+			protected void doAccept(Event<E> e) {
 				if (Selectors.T(exceptionType).matches(e.getData().getClass())) {
 					onError.accept(e.getData());
 				}
@@ -105,7 +99,7 @@ public abstract class Composable<T> implements OperationPipe<T> {
 	 */
 	public Composable<T> connect(@Nonnull final Composable<T> composable) {
 		this.consume(composable);
-		events.on(error.getT1(), new ConnectOperation<Throwable>(composable.events, composable.error.getT2(), null));
+		events.on(error.getT1(), new ConnectAction<Throwable>(composable.events, composable.error.getT2(), null));
 		return this;
 	}
 
@@ -120,7 +114,7 @@ public abstract class Composable<T> implements OperationPipe<T> {
 		if (composable == this) {
 			throw new IllegalArgumentException("Trying to consume itself, leading to erroneous recursive calls");
 		}
-		addOperation(new ConnectOperation<T>(composable.events, composable.accept.getT2(), composable.error.getT2()));
+		add(new ConnectAction<T>(composable.events, composable.accept.getT2(), composable.error.getT2()));
 
 		return this;
 	}
@@ -133,7 +127,7 @@ public abstract class Composable<T> implements OperationPipe<T> {
 	 * @return {@literal this}
 	 */
 	public Composable<T> consume(@Nonnull final Consumer<T> consumer) {
-		addOperation(new CallbackOperation<T>(consumer, events, error.getT2()));
+		add(new CallbackAction<T>(consumer, events, error.getT2()));
 		return this;
 	}
 
@@ -145,7 +139,7 @@ public abstract class Composable<T> implements OperationPipe<T> {
 	 * @return {@literal this}
 	 */
 	public Composable<T> consumeEvent(@Nonnull final Consumer<Event<T>> consumer) {
-		addOperation(new CallbackEventOperation<T>(consumer, events, error.getT2()));
+		add(new CallbackEventAction<T>(consumer, events, error.getT2()));
 		return this;
 	}
 
@@ -157,7 +151,7 @@ public abstract class Composable<T> implements OperationPipe<T> {
 	 * @return {@literal this}
 	 */
 	public Composable<T> consume(@Nonnull final Object key, @Nonnull final Observable observable) {
-		addOperation(new ConnectOperation<T>(observable, key, null));
+		add(new ConnectAction<T>(observable, key, null));
 		return this;
 	}
 
@@ -172,7 +166,7 @@ public abstract class Composable<T> implements OperationPipe<T> {
 	public <V> Composable<V> map(@Nonnull final Function<T, V> fn) {
 		Assert.notNull(fn, "Map function cannot be null.");
 		final Deferred<V, ? extends Composable<V>> d = createDeferred();
-		addOperation(new MapOperation<T, V>(
+		add(new MapAction<T, V>(
 				fn,
 				d.compose().getObservable(),
 				d.compose().getAccept().getT2(),
@@ -188,10 +182,10 @@ public abstract class Composable<T> implements OperationPipe<T> {
 	 * @param <V> the type of the return value of the transformation function
 	 * @return a new {@code Composable} containing the transformed values
 	 */
-	public <V> Composable<V> flatMap(@Nonnull final Function<T, Composable<V>> fn) {
+	public <V> Composable<V> mapMany(@Nonnull final Function<T, Composable<V>> fn) {
 		Assert.notNull(fn, "FlatMap function cannot be null.");
 		final Deferred<V, ? extends Composable<V>> d = createDeferred();
-		addOperation(new FlatMapOperation<T, V, Composable<V>>(
+		add(new MapManyAction<T, V, Composable<V>>(
 				fn,
 				d.compose().getObservable(),
 				d.compose().getAccept().getT2(),
@@ -238,9 +232,9 @@ public abstract class Composable<T> implements OperationPipe<T> {
 	 */
 	public Composable<T> filter(@Nonnull final Predicate<T> p, final Composable<T> elseComposable) {
 		final Deferred<T, ? extends Composable<T>> d = createDeferred();
-		addOperation(new FilterOperation<T>(p, d.compose().getObservable(), d.compose().getAccept().getT2(), error.getT2(),
-				elseComposable != null ? elseComposable.events : null,
-				elseComposable != null ? elseComposable.accept.getT2() : null));
+		add(new FilterAction<T>(p, d.compose().getObservable(), d.compose().getAccept().getT2(), error.getT2(),
+		                        elseComposable != null ? elseComposable.events : null,
+		                        elseComposable != null ? elseComposable.accept.getT2() : null));
 		return d.compose();
 	}
 
@@ -249,7 +243,6 @@ public abstract class Composable<T> implements OperationPipe<T> {
 	 *
 	 * @return {@literal this}
 	 */
-	@Override
 	public Composable<T> flush() {
 		Composable<?> that = this;
 		while (that.parent != null) {
@@ -265,17 +258,18 @@ public abstract class Composable<T> implements OperationPipe<T> {
 		while (that.parent != null) {
 			that = that.parent;
 		}
-		return OperationUtils.browseReactor((Reactor) that.events
+		return ActionUtils.browseReactor((Reactor) that.events,
+				that.accept.getT2(), that.error.getT2(), that.flush.getT2()
 		);
 	}
 
 	/**
-	 * Consume events with the passed {@code Operation}
+	 * Consume events with the passed {@code Action}
 	 *
-	 * @param operation the operation listening for values
+	 * @param action the action listening for values
 	 */
-	public Composable<T> addOperation(Operation<T> operation) {
-		this.events.on(accept.getT1(), operation);
+	public Composable<T> add(Action<T> action) {
+		this.events.on(accept.getT1(), action);
 		return this;
 	}
 

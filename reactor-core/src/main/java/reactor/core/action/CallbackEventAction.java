@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.operations;
+package reactor.core.action;
 
 import reactor.core.Observable;
 import reactor.event.Event;
@@ -22,17 +22,18 @@ import reactor.function.Consumer;
 /**
  * @author Stephane Maldini
  */
-public class CallbackOperation<T> extends BaseOperation<T> {
+public class CallbackEventAction<T> extends Action<T> {
 
-	private final Consumer<T> consumer;
+	private final Consumer<Event<T>> consumer;
 
-	public CallbackOperation(Consumer<T> consumer, Observable d, Object failureKey) {
+	public CallbackEventAction(Consumer<Event<T>> consumer, Observable d, Object failureKey) {
 		super(d, null, failureKey);
 		this.consumer = consumer;
 	}
 
 	@Override
-	public void doOperation(Event<T> value) {
-		consumer.accept(value.getData());
+	public void doAccept(Event<T> value) {
+		consumer.accept(value);
 	}
+
 }

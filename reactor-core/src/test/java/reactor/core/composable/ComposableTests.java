@@ -30,7 +30,6 @@ import reactor.function.Consumer;
 import reactor.function.Function;
 import reactor.function.Predicate;
 import reactor.function.support.Tap;
-import reactor.operations.OperationUtils;
 import reactor.tuple.Tuple2;
 
 import java.util.Arrays;
@@ -203,7 +202,6 @@ public class ComposableTests extends AbstractReactorTest {
 		Stream<List<Integer>> s =
 				d.compose()
 				 .map(STRING_2_INTEGER)
-				 .batch(5)
 				 .collect();
 
 		final AtomicInteger batchCount = new AtomicInteger();

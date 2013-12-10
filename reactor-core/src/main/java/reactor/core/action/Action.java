@@ -13,44 +13,55 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.operations;
+package reactor.core.action;
 
 import reactor.core.Observable;
 import reactor.event.Event;
+import reactor.function.Consumer;
 
 /**
- * Marker interface for all Composable operations such as map, reduce, filter...
+ * Base class for all Composable actions such as map, reduce, filter...
  *
  * @param <T>
  * 		The type of the values
  *
  * @author Stephane Maldini
  */
-public abstract class BaseOperation<T> implements Operation<T>{
+public abstract class Action<T> implements Consumer<Event<T>> {
 
 	private final Observable observable;
-	private final Object successKey;
-	private final Object failureKey;
+	private final Object     successKey;
+	private final Object     failureKey;
 
-	protected BaseOperation(Observable observable, Object successKey, Object failureKey) {
+	protected Action(Observable observable, Object successKey, Object failureKey) {
 		this.observable = observable;
 		this.successKey = successKey;
 		this.failureKey = failureKey;
 	}
 
-	protected BaseOperation(Observable observable, Object successKey) {
+	protected Action(Observable observable, Object successKey) {
 		this(observable, successKey, null);
 	}
 
-	protected abstract void doOperation(Event<T> ev);
-
 	@Override
-	public void accept(Event<T> tEvent) {
+	public final void accept(Event<T> tEvent) {
 		try {
-			doOperation(tEvent);
-		} catch (Throwable e) {
+			doAccept(tEvent);
+		} catch(Throwable e) {
 			notifyError(e);
 		}
+	}
+
+	public Observable getObservable() {
+		return observable;
+	}
+
+	public Object getSuccessKey() {
+		return successKey;
+	}
+
+	public Object getFailureKey() {
+		return failureKey;
 	}
 
 	protected void notifyValue(Event<?> value) {
@@ -67,20 +78,6 @@ public abstract class BaseOperation<T> implements Operation<T>{
 		observable.notify(failureKey != null ? failureKey : error.getClass(), Event.wrap(error));
 	}
 
-
-	@Override
-	public Observable getObservable() {
-		return observable;
-	}
-
-	@Override
-	public Object getSuccessKey() {
-		return successKey;
-	}
-
-	@Override
-	public Object getFailureKey() {
-		return failureKey;
-	}
+	protected abstract void doAccept(Event<T> ev);
 
 }

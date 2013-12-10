@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.operations;
+package reactor.core.action;
 
 import reactor.core.Observable;
 import reactor.event.Event;
@@ -22,17 +22,17 @@ import reactor.function.Predicate;
 /**
  * @author Stephane Maldini
  */
-public class FilterOperation<T> extends BaseOperation<T> {
+public class FilterAction<T> extends Action<T> {
 	private final Predicate<T> p;
 	private final Observable   elseObservable;
-	private final Object   elseSuccess;
+	private final Object       elseSuccess;
 
-	public FilterOperation(Predicate<T> p, Observable d, Object successKey, Object failureKey) {
+	public FilterAction(Predicate<T> p, Observable d, Object successKey, Object failureKey) {
 		this(p, d, successKey, failureKey, null, null);
 	}
 
-	public FilterOperation(Predicate<T> p, Observable d, Object successKey, Object failureKey,
-	                       Observable elseObservable, Object elseSuccess
+	public FilterAction(Predicate<T> p, Observable d, Object successKey, Object failureKey,
+	                    Observable elseObservable, Object elseSuccess
 	) {
 		super(d, successKey, failureKey);
 		this.p = p;
@@ -41,12 +41,12 @@ public class FilterOperation<T> extends BaseOperation<T> {
 	}
 
 	@Override
-	public void doOperation(Event<T> value) {
+	public void doAccept(Event<T> value) {
 		boolean b = p.test(value.getData());
-		if (b) {
+		if(b) {
 			notifyValue(value);
 		} else {
-			if (null != elseObservable) {
+			if(null != elseObservable) {
 				elseObservable.notify(elseSuccess, value);
 			}
 			// GH-154: Verbose error level logging of every event filtered out by a Stream filter
@@ -62,4 +62,5 @@ public class FilterOperation<T> extends BaseOperation<T> {
 	public Observable getElseObservable() {
 		return elseObservable;
 	}
+
 }

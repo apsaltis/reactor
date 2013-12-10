@@ -13,26 +13,27 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.operations;
+package reactor.core.action;
 
 import reactor.core.Observable;
 import reactor.event.Event;
-import reactor.event.selector.Selector;
-import reactor.function.Consumer;
-import reactor.function.Supplier;
+import reactor.function.Function;
 
 /**
- * Marker interface for all Composable operations such as map, reduce, filter...
- *
- * @param <T>
- * 		The type of the values
- *
  * @author Stephane Maldini
  */
-public interface Operation<T> extends Consumer<Event<T>> {
+public class MapAction<T, V> extends Action<T> {
 
-	Observable getObservable();
+	private final Function<T, V> fn;
 
-	Object getSuccessKey();
-	Object getFailureKey();
+	public MapAction(Function<T, V> fn, Observable d, Object successKey, Object failureKey) {
+		super(d, successKey, failureKey);
+		this.fn = fn;
+	}
+
+	@Override
+	public void doAccept(Event<T> value) {
+		V val = fn.apply(value.getData());
+		notifyValue(value.copy(val));
+	}
 }

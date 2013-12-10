@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.operations;
+package reactor.core.action;
 
 import reactor.core.Observable;
 import reactor.event.Event;
@@ -22,42 +22,41 @@ import reactor.event.selector.Selector;
 /**
  * @author Stephane Maldini
  */
-public class ForEachOperation<T> extends BaseOperation<Iterable<T>> {
+public class ForEachAction<T> extends Action<Iterable<T>> {
 
 	final private Iterable<T> values;
 
-	public ForEachOperation(Observable d, Object successKey, Object failureKey) {
+	public ForEachAction(Observable d, Object successKey, Object failureKey) {
 		this(null, d, successKey, failureKey);
 	}
 
-	public ForEachOperation(Iterable<T> values, Observable d, Object successKey, Object failureKey) {
+	public ForEachAction(Iterable<T> values, Observable d, Object successKey, Object failureKey) {
 		super(d, successKey, failureKey);
 		this.values = values;
 	}
 
-	public ForEachOperation<T> attach(Selector flushKey){
-		getObservable().on(flushKey, new ForEachFlushOperation());
+	public ForEachAction<T> attach(Selector flushKey) {
+		getObservable().on(flushKey, new ForEachFlushAction());
 		return this;
 	}
 
 	@Override
-	public void doOperation(Event<Iterable<T>> value) {
-		if (value.getData() != null) {
-			for (T val : value.getData()) {
+	public void doAccept(Event<Iterable<T>> value) {
+		if(value.getData() != null) {
+			for(T val : value.getData()) {
 				notifyValue(value.copy(val));
 			}
 		}
 	}
 
-	private class ForEachFlushOperation extends BaseOperation<Void> {
-		public ForEachFlushOperation() {
-			super(ForEachOperation.this.getObservable(), ForEachOperation.this.getSuccessKey());
+	private class ForEachFlushAction extends Action<Void> {
+		public ForEachFlushAction() {
+			super(ForEachAction.this.getObservable(), ForEachAction.this.getSuccessKey());
 		}
 
 		@Override
-		public void doOperation(Event<Void> ev) {
-			if(values != null)
-				ForEachOperation.this.doOperation(ev.copy(values));
+		public void doAccept(Event<Void> ev) {
+			if(values != null) { ForEachAction.this.doAccept(ev.copy(values)); }
 		}
 	}
 }

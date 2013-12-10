@@ -13,27 +13,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.operations;
-
-import reactor.core.Observable;
-import reactor.event.Event;
-import reactor.function.Function;
+package reactor.core.action;
 
 /**
+ * Component that can be injected with {@link Action}s
+ *
  * @author Stephane Maldini
+ * @author Jon Brisbin
  */
-public class MapOperation<T, V> extends BaseOperation<T> {
+public interface Pipeline<T> {
 
-	private final Function<T, V> fn;
+	/**
+	 * Consume events with the passed {@code Action}
+	 *
+	 * @param action
+	 * 		the action listening for values
+	 */
+	Pipeline<T> add(Action<T> action);
 
-	public MapOperation(Function<T, V> fn, Observable d, Object successKey, Object failureKey) {
-		super(d, successKey, failureKey);
-		this.fn = fn;
-	}
+	Pipeline<T> flush();
 
-	@Override
-	public void doOperation(Event<T> value) {
-		V val = fn.apply(value.getData());
-		notifyValue(value.copy(val));
-	}
 }

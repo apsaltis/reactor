@@ -16,13 +16,9 @@
 
 package reactor.core.composable;
 
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Condition;
-import java.util.concurrent.locks.ReentrantLock;
-
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
-
+import reactor.core.action.Action;
+import reactor.core.action.CallbackAction;
+import reactor.core.action.ConnectAction;
 import reactor.core.Environment;
 import reactor.core.Observable;
 import reactor.core.spec.Reactors;
@@ -34,11 +30,14 @@ import reactor.function.Consumer;
 import reactor.function.Function;
 import reactor.function.Predicate;
 import reactor.function.Supplier;
-import reactor.operations.CallbackOperation;
-import reactor.operations.ConnectOperation;
-import reactor.operations.Operation;
 import reactor.tuple.Tuple2;
 import reactor.util.Assert;
+
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * A {@code Promise} is a stateful event processor that accepts a single value or error. In addition to {@link #get()
@@ -77,22 +76,22 @@ public class Promise<T> extends Composable<T> implements Supplier<T> {
 	/**
 	 * Creates a new unfulfilled promise.
 	 * <p/>
-	 * The {@code dispatcher} is used when notifying the Promise's consumers, determining the thread on which they are
+	 * The {@code observable} is used when notifying the Promise's consumers, determining the thread on which they are
 	 * called. The given {@code env} is used to determine the default await timeout. If {@code env} is {@code null} the
 	 * default await timeout will be 30 seconds. This Promise will consumer errors from its {@code parent} such that if
 	 * the parent completes in error then so too will this Promise.
 	 *
-	 * @param dispatcher
-	 * 		The Dispatcher to use to call Consumers
+	 * @param observable
+	 * 		The Observable to use to call Consumers
 	 * @param env
 	 * 		The Environment, if any, from which the default await timeout is obtained
 	 * @param parent
 	 * 		The parent, if any, from which errors are consumed
 	 */
-	public Promise(@Nullable Dispatcher dispatcher,
+	public Promise(@Nullable Observable observable,
 	               @Nullable Environment env,
 	               @Nullable Composable<?> parent) {
-		super(dispatcher, parent);
+		super(observable, parent);
 		this.defaultTimeout = env != null ? env.getProperty("reactor.await.defaultTimeout", Long.class, 30000L) : 30000L;
 		this.environment = env;
 		this.pendingCondition = lock.newCondition();
@@ -115,20 +114,20 @@ public class Promise<T> extends Composable<T> implements Supplier<T> {
 	/**
 	 * Creates a new promise that has been fulfilled with the given {@code value}.
 	 * <p/>
-	 * The {@code dispatcher} is used when notifying the Promise's consumers. The given {@code env} is used to determine
+	 * The {@code observable} is used when notifying the Promise's consumers. The given {@code env} is used to determine
 	 * the default await timeout. If {@code env} is {@code null} the default await timeout will be 30 seconds.
 	 *
 	 * @param value
 	 * 		The value that fulfills the promise
-	 * @param dispatcher
-	 * 		The Dispatcher to use to call Consumers
+	 * @param observable
+	 * 		The Observable to use to call Consumers
 	 * @param env
 	 * 		The Environment, if any, from which the default await timeout is obtained
 	 */
 	public Promise(T value,
-	               @Nullable Dispatcher dispatcher,
+	               @Nullable Observable observable,
 	               @Nullable Environment env) {
-		this(dispatcher, env, null);
+		this(observable, env, null);
 		this.value = value;
 		this.state = State.SUCCESS;
 		init();
@@ -137,21 +136,21 @@ public class Promise<T> extends Composable<T> implements Supplier<T> {
 	/**
 	 * Creates a new promise that will be fulfilled with the value obtained from the given {@code valueSupplier}.
 	 * <p/>
-	 * The {@code dispatcher} is used when notifying the Promise's consumers, determining the thread on which they are
+	 * The {@code observable} is used when notifying the Promise's consumers, determining the thread on which they are
 	 * called. The given {@code env} is used to determine the default await timeout. If {@code env} is {@code null} the
 	 * default await timeout will be 30 seconds.
 	 *
 	 * @param valueSupplier
 	 * 		The Supplier of the value that fulfills the promise
-	 * @param dispatcher
-	 * 		The Dispatcher to use to call Consumers
+	 * @param observable
+	 * 		The Observable to use to call Consumers
 	 * @param env
 	 * 		The Environment, if any, from which the default await timeout is obtained
 	 */
 	public Promise(Supplier<T> valueSupplier,
-	               @Nonnull Dispatcher dispatcher,
+	               @Nonnull Observable observable,
 	               @Nullable Environment env) {
-		this(dispatcher, env, null);
+		this(observable, env, null);
 		this.supplier = valueSupplier;
 		init();
 	}
@@ -159,7 +158,7 @@ public class Promise<T> extends Composable<T> implements Supplier<T> {
 	/**
 	 * Creates a new promise that has failed with the given {@code error}.
 	 * <p/>
-	 * The {@code dispatcher} is used when notifying the Promise's consumers, determining the thread on which they are
+	 * The {@code observable} is used when notifying the Promise's consumers, determining the thread on which they are
 	 * called. The given {@code env} is used to determine the default await timeout. If {@code env} is {@code null} the
 	 * default await timeout will be 30 seconds.
 	 *
@@ -167,13 +166,13 @@ public class Promise<T> extends Composable<T> implements Supplier<T> {
 	 * 		The error the completed the promise
 	 * @param env
 	 * 		The Environment, if any, from which the default await timeout is obtained
-	 * @param dispatcher
-	 * 		The Dispatcher to use to call Consumers
+	 * @param observable
+	 * 		The Observable to use to call Consumers
 	 */
 	public Promise(Throwable error,
-	               @Nonnull Dispatcher dispatcher,
+	               @Nonnull Observable observable,
 	               @Nullable Environment env) {
-		this(dispatcher, env, null);
+		this(observable, env, null);
 		this.error = error;
 		this.state = State.FAILURE;
 		init();
@@ -210,7 +209,7 @@ public class Promise<T> extends Composable<T> implements Supplier<T> {
 		if(isComplete()) {
 			Reactors.schedule(onComplete, this, getObservable());
 		} else {
-			getObservable().on(complete.getT1(), new CallbackOperation<Promise<T>>(onComplete, getObservable(), null));
+			getObservable().on(complete.getT1(), new CallbackAction<Promise<T>>(onComplete, getObservable(), null));
 		}
 		return this;
 	}
@@ -474,8 +473,8 @@ public class Promise<T> extends Composable<T> implements Supplier<T> {
 	}
 
 	@Override
-	public <V> Promise<V> flatMap(@Nonnull Function<T, Composable<V>> fn) {
-		return (Promise<V>)super.flatMap(fn);
+	public <V> Promise<V> mapMany(@Nonnull Function<T, Composable<V>> fn) {
+		return (Promise<V>)super.mapMany(fn);
 	}
 
 	@Override
@@ -485,7 +484,7 @@ public class Promise<T> extends Composable<T> implements Supplier<T> {
 		try {
 			if(state == State.FAILURE) {
 				Reactors.schedule(
-						new CallbackOperation<E>(onError, getObservable(), null),
+						new CallbackAction<E>(onError, getObservable(), null),
 						Event.wrap((E)error), getObservable());
 			} else {
 				super.when(exceptionType, onError);
@@ -512,17 +511,17 @@ public class Promise<T> extends Composable<T> implements Supplier<T> {
 	}
 
 	@Override
-	public Promise<T> addOperation(Operation<T> operation) {
+	public Promise<T> add(Action<T> operation) {
 		lock.lock();
 		try {
 			if(state == State.SUCCESS) {
 				Reactors.schedule(operation, Event.wrap(value), getObservable());
 			} else if(state == State.FAILURE) {
 				Reactors.schedule(
-						new ConnectOperation<Throwable>(operation.getObservable(), operation.getFailureKey(), null),
+						new ConnectAction<Throwable>(operation.getObservable(), operation.getFailureKey(), null),
 						Event.wrap(error), getObservable());
 			} else {
-				super.addOperation(operation);
+				super.add(operation);
 			}
 			return this;
 		} finally {
