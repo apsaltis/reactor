@@ -214,7 +214,6 @@ public class HashWheelTimer {
 	}
 
 	private static class PeriodSelector implements Selector {
-		private final UUID uuid = UUIDUtils.create();
 		private final long period;
 		private final long delay;
 		private final long createdMillis;
@@ -225,11 +224,6 @@ public class HashWheelTimer {
 			this.delay = delay;
 			this.resolution = resolution;
 			this.createdMillis = now(resolution);
-		}
-
-		@Override
-		public UUID getId() {
-			return uuid;
 		}
 
 		@Override

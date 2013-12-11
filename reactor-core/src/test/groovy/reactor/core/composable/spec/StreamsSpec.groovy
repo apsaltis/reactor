@@ -142,6 +142,48 @@ class StreamsSpec extends Specification {
       value.get() == 2
   }
 
+  def 'Streams can be controlled'() {
+    given:
+      'a composable with a registered consumer'
+      Deferred d = Streams.defer().synchronousDispatcher().get()
+      Stream composable = d.compose()
+      def value = composable.tap()
+
+
+	  when:
+		  'a stream is paused'
+	    composable.pause()
+	  and:
+		  'a value is accepted'
+		  d.accept(1)
+
+    then:
+      'it is not passed to the consumer'
+      value.get() != 1
+
+	  when:
+		  'a stream is resumed'
+	    composable.resume()
+		 and:
+      'another value is accepted'
+      d.accept(2)
+
+    then:
+      'it is passed to the consumer'
+      value.get() == 2
+
+	  when:
+		  'a stream is cancelled'
+	    composable.cancel()
+		 and:
+      'another value is accepted'
+      d.accept(3)
+
+    then:
+      'it is not passed to the consumer'
+      value.get() != 3
+  }
+
   def 'Accepted errors are passed to a registered Consumer'() {
     given:
       'a composable with a registered consumer of RuntimeExceptions'
@@ -420,7 +462,6 @@ class StreamsSpec extends Specification {
       'a consumer is registered'
       def values = []
       reduced.consume(consumer { values << it }).flush()
-	  println reduced.debug()
 
     then:
       'the consumer only receives the final value'
@@ -576,6 +617,40 @@ class StreamsSpec extends Specification {
     then:
       'the collected list contains the first and second elements'
       value.get() == [1, 2]
+  }
+
+  def 'Window will accumulate a list of accepted values and pass it to a consumer on the specified period'() {
+    given:
+      'a source and a collected stream'
+	    Environment environment = new Environment()
+      Deferred source = Streams.<Integer>defer().synchronousDispatcher().env(environment).get()
+      Stream reduced = source.compose().window(1000)
+      def value = reduced.tap()
+
+    when:
+      'the first values are accepted on the source'
+      source.accept(1)
+      source.accept(2)
+	    sleep(1100)
+
+
+    then:
+      'the collected list is not yet available'
+      value.get() == [1,2]
+
+    when:
+      'the second value is accepted'
+      source.accept(3)
+      source.accept(4)
+	    sleep(1100)
+
+    then:
+      'the collected list contains the first and second elements'
+      value.get() == [3, 4]
+
+	  cleanup:
+		  environment.shutdown()
+
   }
 
   def 'Collect will accumulate values from multiple threads'() {

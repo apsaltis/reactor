@@ -13,36 +13,34 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-package reactor.event.routing;
+package reactor.event.lifecycle;
 
 /**
- * Simple abstraction to provide linking components together.
- *
- * @param <T> the type that can be linked
- *
- * @author Jon Brisbin
+ * @author Stephane Maldini
  */
-public interface Linkable<T> {
+public interface Lifecycle {
+
 
 	/**
-	 * Link components together.
-	 *
-	 * @param t
-	 * 		Array of components to link to this parent.
+	 * Cancel this {@literal Lifecycle}. The implementing component should never react to any stimulus,
+	 * closing resources if necessary.
 	 *
 	 * @return {@literal this}
 	 */
-	Linkable<T> link(T t);
+	Lifecycle cancel();
 
 	/**
-	 * Unlink components.
-	 *
-	 * @param t
-	 * 		Component to unlink when this parent.
+	 * Pause this {@literal Lifecycle}. The implementing component should stop reacting, pausing resources if necessary.
 	 *
 	 * @return {@literal this}
 	 */
-	Linkable<T> unlink(T t);
+	Lifecycle pause();
 
+	/**
+	 * Unpause this {@literal Lifecycle}. The implementing component should resume back from a previous pause,
+	 * re-activating resources if necessary.
+	 *
+	 * @return {@literal this}
+	 */
+	Lifecycle resume();
 }

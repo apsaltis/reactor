@@ -20,6 +20,7 @@ import reactor.core.action.*;
 import reactor.core.Observable;
 import reactor.core.Reactor;
 import reactor.event.Event;
+import reactor.event.lifecycle.Lifecycle;
 import reactor.event.selector.Selector;
 import reactor.event.selector.Selectors;
 import reactor.function.Consumer;
@@ -41,7 +42,7 @@ import javax.annotation.Nullable;
  * @author Jon Brisbin
  * @author Andy Wilkinson
  */
-public abstract class Composable<T> implements Pipeline<T> {
+public abstract class Composable<T> implements Pipeline<T>, Lifecycle {
 
 	private final Tuple2<Selector, Object> accept;
 	private final Tuple2<Selector, Object> error = Selectors.$();
@@ -182,10 +183,10 @@ public abstract class Composable<T> implements Pipeline<T> {
 	 * @param <V> the type of the return value of the transformation function
 	 * @return a new {@code Composable} containing the transformed values
 	 */
-	public <V> Composable<V> mapMany(@Nonnull final Function<T, Composable<V>> fn) {
+	public <V,C extends Composable<V>> Composable<V> mapMany(@Nonnull final Function<T, C> fn) {
 		Assert.notNull(fn, "FlatMap function cannot be null.");
-		final Deferred<V, ? extends Composable<V>> d = createDeferred();
-		add(new MapManyAction<T, V, Composable<V>>(
+		final Deferred<V,C> d = createDeferred();
+		add(new MapManyAction<T, V, C>(
 				fn,
 				d.compose().getObservable(),
 				d.compose().getAccept().getT2(),
@@ -233,8 +234,8 @@ public abstract class Composable<T> implements Pipeline<T> {
 	public Composable<T> filter(@Nonnull final Predicate<T> p, final Composable<T> elseComposable) {
 		final Deferred<T, ? extends Composable<T>> d = createDeferred();
 		add(new FilterAction<T>(p, d.compose().getObservable(), d.compose().getAccept().getT2(), error.getT2(),
-		                        elseComposable != null ? elseComposable.events : null,
-		                        elseComposable != null ? elseComposable.accept.getT2() : null));
+				elseComposable != null ? elseComposable.events : null,
+				elseComposable != null ? elseComposable.accept.getT2() : null));
 		return d.compose();
 	}
 
@@ -267,14 +268,50 @@ public abstract class Composable<T> implements Pipeline<T> {
 	 * Consume events with the passed {@code Action}
 	 *
 	 * @param action the action listening for values
+	 * @return {@literal this}
 	 */
 	public Composable<T> add(Action<T> action) {
 		this.events.on(accept.getT1(), action);
 		return this;
 	}
 
+
 	/**
-	 * Notify this {@code Composable} that a flush is being requested by this {@code Composable}.
+	 * Pause events in this Composable
+	 *
+	 * @return {@literal this}
+	 */
+	@Override
+	public Composable<T> pause() {
+		this.events.notify("control://localhost/pause", Event.wrap(accept.getT2()));
+		return this;
+	}
+
+	/**
+	 * Pause events in this Composable
+	 *
+	 * @return {@literal this}
+	 */
+	@Override
+	public Composable<T> resume() {
+		this.events.notify("control://localhost/resume", Event.wrap(accept.getT2()));
+		return this;
+	}
+
+	/**
+	 * Pause events in this Composable
+	 *
+	 * @return {@literal this}
+	 */
+	@Override
+	public Composable<T> cancel() {
+		this.events.notify("control://localhost/cancel", Event.wrap(accept.getT2()));
+		return this;
+	}
+
+
+	/**
+	 * Notify this {@code Composable} hat a flush is being requested by this {@code Composable}.
 	 */
 	void notifyFlush() {
 		events.notify(flush.getT2(), new Event<Void>(null));

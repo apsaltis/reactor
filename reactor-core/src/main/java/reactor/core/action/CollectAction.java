@@ -34,14 +34,12 @@ public class CollectAction<T> extends BatchAction<T> {
 
 	@Override
 	public void doNext(Event<T> value) {
-		synchronized(values) {
-			values.add(value.getData());
-		}
+		values.add(value.getData());
 	}
 
 	@Override
 	public void doFlush(Event<T> ev) {
-		if(values.isEmpty()) {
+		if (values.isEmpty()) {
 			return;
 		}
 		notifyValue(ev.copy(new ArrayList<T>(values)));
