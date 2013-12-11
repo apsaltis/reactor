@@ -26,14 +26,6 @@ import java.util.UUID;
  * @author Andy Wilkinson
  */
 public interface Selector  {
-
-	/**
-	 * Get the unique id of this Selector
-	 *
-	 * @return The unique id.
-	 */
-	UUID getId();
-
 	/**
 	 * Get the object being used for comparisons and equals checks.
 	 *

@@ -85,7 +85,7 @@ public class Reactor implements Observable {
 	 * 		The {@link Dispatcher} to use. May be {@code null} in which case a new {@link
 	 * 		SynchronousDispatcher} is used
 	 */
-	public Reactor(Dispatcher dispatcher) {
+	public  Reactor(Dispatcher dispatcher) {
 		this(dispatcher,
 		     null);
 	}
@@ -109,7 +109,7 @@ public class Reactor implements Observable {
   }
 
 	/**
-	 * Create a new {@literal Reactor} that uses the given {@code dispatacher} and {@code eventRouter}.
+	 * Create a new {@literal Reactor} that uses the given {@code dispatcher} and {@code eventRouter}.
 	 *
 	 * @param dispatcher
 	 * 		The {@link Dispatcher} to use. May be {@code null} in which case a new synchronous  dispatcher is

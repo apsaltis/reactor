@@ -20,6 +20,7 @@ import reactor.core.Observable;
 import reactor.core.Reactor;
 import reactor.core.spec.support.DispatcherComponentSpec;
 import reactor.event.dispatch.Dispatcher;
+import reactor.event.dispatch.SynchronousDispatcher;
 import reactor.event.selector.Selector;
 import reactor.tuple.Tuple2;
 
@@ -34,8 +35,20 @@ import reactor.tuple.Tuple2;
 public abstract class ComposableSpec<SPEC extends ComposableSpec<SPEC, TARGET>, TARGET> extends DispatcherComponentSpec<SPEC,
 		TARGET> {
 
+	private boolean newReactor = false;
 	private Observable               observable;
 	private Tuple2<Selector, Object> acceptSelector;
+
+	/**
+	 * Configures the Composable to use an anonymous reactor instead of the environment root one
+	 *
+	 * @return {@code this}
+	 */
+	@SuppressWarnings("unchecked")
+	public SPEC fork(boolean newReactor) {
+		this.newReactor = newReactor;
+		return (SPEC) this;
+	}
 
 	/**
 	 * Configures the Composable to reuse an explicit selector/key rather than the internal anonymous generated one.
@@ -65,7 +78,11 @@ public abstract class ComposableSpec<SPEC extends ComposableSpec<SPEC, TARGET>, 
 	@Override
 	protected TARGET configure(final Dispatcher dispatcher, Environment env) {
 		if (observable == null) {
-			observable = new Reactor(dispatcher).control();
+			if(newReactor || env == null){
+				observable = new Reactor(dispatcher == null ? new SynchronousDispatcher() : dispatcher).control();
+			}else{
+				observable = env.getRootReactor();
+			}
 		}
 		return createComposable(env, observable, acceptSelector);
 	}

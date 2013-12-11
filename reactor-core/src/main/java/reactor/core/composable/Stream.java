@@ -150,10 +150,9 @@ public class Stream<T> extends Composable<T> {
 	}
 
 	@Override
-	public <V> Stream<V> mapMany(@Nonnull Function<T, Composable<V>> fn) {
-		return (Stream<V>) super.mapMany(fn);
+	public <V, C extends Composable<V>> Stream<V> mapMany(@Nonnull Function<T, C> fn) {
+		return (Stream<V>)super.mapMany(fn);
 	}
-
 
 	@Override
 	public Stream<T> filter(@Nonnull Predicate<T> p) {
@@ -294,8 +293,8 @@ public class Stream<T> extends Composable<T> {
 
 	/**
 	 * Collect incoming values into a {@link List} that will be pushed into the returned {@code Stream} every specified
-	 * time from the {@param period} in milliseconds. The window runs on a timer from the stream {@link
-	 * this#environment}.
+	 * time from the {@param period}, {@param timeUnit} after an initial {@param delay} in milliseconds. The window
+	 * runs on a timer from the stream {@link this#environment}.
 	 *
 	 * @param period  the time period when each window close and flush the attached consumer
 	 *
