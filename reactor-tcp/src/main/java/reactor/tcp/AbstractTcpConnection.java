@@ -34,8 +34,8 @@ import reactor.function.Consumer;
 import reactor.function.Function;
 import reactor.function.batch.BatchConsumer;
 import reactor.io.Buffer;
-import reactor.queue.BlockingQueueFactory;
 import reactor.io.encoding.Codec;
+import reactor.queue.BlockingQueueFactory;
 import reactor.tuple.Tuple2;
 
 import java.util.NoSuchElementException;
@@ -86,6 +86,9 @@ public abstract class AbstractTcpConnection<IN, OUT> implements TcpConnection<IN
 		consume(new Consumer<IN>() {
 			@Override
 			public void accept(IN in) {
+				if(replyToKeys.isEmpty()) {
+					return;
+				}
 				try {
 					AbstractTcpConnection.this.eventsReactor.notify(replyToKeys.remove(), Event.wrap(in));
 				} catch(NoSuchElementException ignored) {
@@ -217,6 +220,16 @@ public abstract class AbstractTcpConnection<IN, OUT> implements TcpConnection<IN
 		}
 
 		return data.remaining() > 0;
+	}
+
+	public boolean read(byte[] data) {
+		if(null != decoder && null != data && data.length > 0) {
+			decoder.apply(Buffer.wrap(data));
+		} else {
+			eventsReactor.notify(read.getT2(), Event.wrap(data));
+		}
+
+		return false;
 	}
 
 	/**

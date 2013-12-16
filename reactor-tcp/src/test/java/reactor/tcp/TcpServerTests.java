@@ -27,8 +27,12 @@ import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.zeromq.ZContext;
+import org.zeromq.ZMQ;
 import reactor.core.Environment;
+import reactor.event.dispatch.SynchronousDispatcher;
 import reactor.function.Consumer;
+import reactor.function.Function;
 import reactor.function.Supplier;
 import reactor.io.Buffer;
 import reactor.io.encoding.Frame;
@@ -44,6 +48,7 @@ import reactor.tcp.netty.NettyTcpServer;
 import reactor.tcp.spec.TcpClientSpec;
 import reactor.tcp.spec.TcpServerSpec;
 import reactor.tcp.support.SocketUtils;
+import reactor.tcp.zmq.ZeroMQTcpServer;
 
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
@@ -52,6 +57,9 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -69,8 +77,9 @@ public class TcpServerTests {
 
 	final Logger          log        = LoggerFactory.getLogger(TcpServerTests.class);
 	final ExecutorService threadPool = Executors.newCachedThreadPool();
-	final int             msgs       = 150;
-	final int             threads    = 4;
+	final int             msgs       = 1000;
+	final int             threads    = Runtime.getRuntime().availableProcessors();
+	final Random          random     = new Random(System.nanoTime());
 
 	Environment    env;
 	CountDownLatch latch;
@@ -180,9 +189,9 @@ public class TcpServerTests {
 				.env(env)
 				.synchronousDispatcher()
 				.options(new ServerSocketOptions()
-										 .backlog(1000)
-										 .reuseAddr(true)
-										 .tcpNoDelay(true))
+						         .backlog(1000)
+						         .reuseAddr(true)
+						         .tcpNoDelay(true))
 				.listen(port)
 				.codec(new LengthFieldCodec<byte[], byte[]>(StandardCodecs.BYTE_ARRAY_CODEC))
 				.consume(new Consumer<TcpConnection<byte[], byte[]>>() {
@@ -235,9 +244,9 @@ public class TcpServerTests {
 				.env(env)
 				.synchronousDispatcher()
 				.options(new ServerSocketOptions()
-										 .backlog(1000)
-										 .reuseAddr(true)
-										 .tcpNoDelay(true))
+						         .backlog(1000)
+						         .reuseAddr(true)
+						         .tcpNoDelay(true))
 				.listen(port)
 				.codec(new FrameCodec(2, FrameCodec.LengthField.SHORT))
 				.consume(new Consumer<TcpConnection<Frame, Frame>>() {
@@ -303,12 +312,12 @@ public class TcpServerTests {
 		TcpServer<String, String> server = new TcpServerSpec<String, String>(NettyTcpServer.class)
 				.env(env)
 				.options(new NettyServerSocketOptions()
-										 .pipelineConfigurer(new Consumer<ChannelPipeline>() {
-											 @Override
-											 public void accept(ChannelPipeline pipeline) {
-												 pipeline.addLast(new LineBasedFrameDecoder(8 * 1024));
-											 }
-										 }))
+						         .pipelineConfigurer(new Consumer<ChannelPipeline>() {
+							         @Override
+							         public void accept(ChannelPipeline pipeline) {
+								         pipeline.addLast(new LineBasedFrameDecoder(8 * 1024));
+							         }
+						         }))
 				.listen("localhost", port)
 				.codec(StandardCodecs.STRING_CODEC)
 				.consume(serverHandler)
@@ -384,14 +393,14 @@ public class TcpServerTests {
 				.env(env)
 				.listen(port)
 				.options(new NettyServerSocketOptions()
-										 .pipelineConfigurer(new Consumer<ChannelPipeline>() {
-											 @Override
-											 public void accept(ChannelPipeline pipeline) {
-												 pipeline.addLast(new HttpRequestDecoder());
-												 pipeline.addLast(new HttpObjectAggregator(Integer.MAX_VALUE));
-												 pipeline.addLast(new HttpResponseEncoder());
-											 }
-										 }))
+						         .pipelineConfigurer(new Consumer<ChannelPipeline>() {
+							         @Override
+							         public void accept(ChannelPipeline pipeline) {
+								         pipeline.addLast(new HttpRequestDecoder());
+								         pipeline.addLast(new HttpObjectAggregator(Integer.MAX_VALUE));
+								         pipeline.addLast(new HttpResponseEncoder());
+							         }
+						         }))
 				.consume(new Consumer<TcpConnection<HttpRequest, HttpResponse>>() {
 					@Override
 					public void accept(final TcpConnection<HttpRequest, HttpResponse> conn) {
@@ -438,6 +447,155 @@ public class TcpServerTests {
 		System.out.println("HTTP throughput: " + (int)((msgs * threads) / (elapsed / 1000)) + "/sec");
 
 		server.shutdown().await();
+	}
+
+	@Test
+	public void testZeroMQServer() throws InterruptedException {
+		final int port = SocketUtils.findAvailableTcpPort();
+
+		final ZContext ctx = new ZContext();
+		final AtomicLong msgsRecvd = new AtomicLong();
+
+		TcpServer<Buffer, Buffer> server = new TcpServerSpec<Buffer, Buffer>(ZeroMQTcpServer.class)
+				.env(env)
+						//				.options(new ZeroMQServerSocketOptions()
+						//						         .context(ctx))
+						//						.dispatcher(Environment.THREAD_POOL)
+//												.dispatcher(new SynchronousDispatcher())
+				.listen(port)
+				.consume(new Consumer<TcpConnection<Buffer, Buffer>>() {
+					@Override
+					public void accept(TcpConnection<Buffer, Buffer> conn) {
+						conn.consume(new Consumer<Buffer>() {
+							@Override
+							public void accept(Buffer data) {
+								//latch.countDown();
+								msgsRecvd.incrementAndGet();
+								//log.info("count: {}", latch.getCount());
+							}
+						});
+					}
+				})
+				.get();
+
+		server.start(new Consumer<Void>() {
+			@Override
+			public void accept(Void v) {
+				for(int i = 0; i < threads; i++) {
+					threadPool.submit(new ZMQWriter(port, ctx));
+				}
+			}
+		});
+
+		//assertTrue("Latch was counted down", latch.await(15, TimeUnit.SECONDS));
+		latch.await(10, TimeUnit.SECONDS);
+		end.set(System.currentTimeMillis());
+
+		double elapsed = (end.get() - start.get());
+		//log.info("ZeroMQ throughput: {}/sec in {}ms", (int)((msgs * threads) / (elapsed / 1000)), (int)elapsed);
+		log.info("ZeroMQ throughput: {}/sec in {}ms", Math.round(msgsRecvd.get() / (elapsed / 1000)), (int)elapsed);
+
+		server.shutdown().await();
+		ctx.destroy();
+	}
+
+	@Test
+	public void testMessageSending() throws InterruptedException {
+		Consumer<TcpConnection<SimpleMessage, SimpleMessage>> consumer1 = new Consumer<TcpConnection<SimpleMessage,
+				SimpleMessage>>() {
+			public void accept(final TcpConnection<SimpleMessage, SimpleMessage> conn) {
+				log.info("Client connected...");
+			}
+		};
+
+		Consumer<TcpConnection<SimpleMessage, SimpleMessage>> consumer2 = new Consumer<TcpConnection<SimpleMessage,
+				SimpleMessage>>() {
+			public void accept(final TcpConnection<SimpleMessage, SimpleMessage> connection) {
+				connection.consume(new Consumer<SimpleMessage>() {
+					public void accept(SimpleMessage data) {
+						log.info(">> {}", data);
+						connection.send(new SimpleMessage("3", new Date()));
+					}
+				});
+			}
+		};
+
+		List<Consumer<TcpConnection<SimpleMessage, SimpleMessage>>> list = new ArrayList<>();
+		list.add(consumer1);
+		list.add(consumer2);
+
+		TcpServer<SimpleMessage, SimpleMessage> server = new TcpServerSpec<SimpleMessage,
+				SimpleMessage>(NettyTcpServer.class)
+				.env(env)
+				//.dispatcher(Environment.RING_BUFFER)
+				.listen("localhost", 15151)
+				.codec(new JsonCodec<SimpleMessage, SimpleMessage>(SimpleMessage.class))
+				.consume(consumer2)
+				.get().start();
+
+
+		TcpClient<SimpleMessage, SimpleMessage> client = new TcpClientSpec<SimpleMessage,
+				SimpleMessage>(NettyTcpClient.class)
+				.env(env)
+				//.dispatcher(Environment.RING_BUFFER)
+				.connect("localhost", 15151)
+				.codec(new JsonCodec<SimpleMessage, SimpleMessage>(SimpleMessage.class))
+				.get();
+
+		final SimpleMessage message = new SimpleMessage("1", new Date());
+
+		TcpConnection<SimpleMessage, SimpleMessage> tcpConnection = client.open().await();
+		tcpConnection.in().consume(new Consumer<SimpleMessage>() {
+			@Override
+			public void accept(SimpleMessage msg) {
+				log.info("<< {}", msg);
+			}
+		});
+
+		//tcpConnection.sendAndReceive(message).await();
+		tcpConnection.send(message);
+		tcpConnection.send(new SimpleMessage("2", new Date()));
+
+		Thread.sleep(3000);
+		tcpConnection.close();
+
+		System.out.println("All data have been send");
+
+		client.close().await();
+		server.shutdown().await();
+	}
+
+	public static class SimpleMessage {
+		String txt;
+		Date   date;
+
+		public SimpleMessage() {
+		}
+
+		public SimpleMessage(String txt) {
+			this.txt = txt;
+		}
+
+		public SimpleMessage(String txt, Date date) {
+			this.txt = txt;
+			this.date = date;
+		}
+
+		public String getTxt() {
+			return txt;
+		}
+
+		public Date getDate() {
+			return date;
+		}
+
+		@Override
+		public String toString() {
+			return "SimpleMessage{" +
+					"txt='" + txt + '\'' +
+					", date=" + date +
+					'}';
+		}
 	}
 
 	public static class Pojo {
@@ -578,6 +736,46 @@ public class TcpServerTests {
 				ch.close();
 			} catch(IOException e) {
 			}
+		}
+	}
+
+	private class ZMQWriter implements Runnable {
+		private final int      port;
+		private final ZContext ctx;
+
+		private ZMQWriter(int port, ZContext ctx) {
+			this.port = port;
+			this.ctx = ctx;
+		}
+
+		@Override
+		public void run() {
+			ZMQ.Socket socket = ctx.createSocket(ZMQ.DEALER);
+			byte[] id = new byte[16];
+			random.nextBytes(id);
+			socket.setIdentity(id);
+			socket.connect("tcp://127.0.0.1:" + port);
+
+			byte[] bytes = "Hello World!".getBytes();
+			int msgsSent = 0;
+			start.set(System.currentTimeMillis());
+			do {
+				socket.send(bytes);
+				msgsSent++;
+				//				long wait = random.nextInt(15);
+				//				try {
+				//					Thread.sleep(wait);
+				//				} catch(InterruptedException e) {
+				//					Thread.currentThread().interrupt();
+				//				}
+			} while(System.currentTimeMillis() - start.get() < 10000);
+
+			long end = System.currentTimeMillis();
+			double elapsed = (end - start.get());
+			int throughput = (int)Math.round(msgsSent / (elapsed / 1000));
+
+			log.info("ZMQWriter throughput: {}/sec in {}ms", throughput, Math.round(elapsed));
+			//socket.close();
 		}
 	}
 }

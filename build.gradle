@@ -33,6 +33,7 @@ ext {
 	springVersion = '3.2.3.RELEASE'
 	siVersion = '3.0.0.M2'
 	nettyVersion = '4.0.11.Final'
+	jeromqVersion = '0.3.1'
 	jacksonDatabindVersion = '2.2.3'
 	jsonPathVersion = '0.9.0'
 	hadoopVersion = '1.1.2'
@@ -336,6 +337,7 @@ project('reactor-tcp') {
 			'com.fasterxml.jackson.core;resolution:=optional',
 			'com.fasterxml.jackson.databind;resolution:=optional',
 			'com.fasterxml.jackson.module;resolution:=optional',
+			'org.zeromq;resolution:=optional',
 			'*'
 	]
 
@@ -343,7 +345,8 @@ project('reactor-tcp') {
 		compile project(':reactor-core')
 
 		compile "io.netty:netty-all:$nettyVersion"
-		optional "com.fasterxml.jackson.core:jackson-databind:$jacksonDatabindVersion"
+		optional "org.zeromq:jeromq:$jeromqVersion",
+				"com.fasterxml.jackson.core:jackson-databind:$jacksonDatabindVersion"
 
 		// Testing
 		testCompile "org.apache.hadoop:hadoop-client:$hadoopVersion"
