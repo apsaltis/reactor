@@ -142,48 +142,6 @@ class StreamsSpec extends Specification {
       value.get() == 2
   }
 
-  def 'Streams can be controlled'() {
-    given:
-      'a composable with a registered consumer'
-      Deferred d = Streams.defer().synchronousDispatcher().get()
-      Stream composable = d.compose()
-      def value = composable.tap()
-
-
-	  when:
-		  'a stream is paused'
-	    composable.pause()
-	  and:
-		  'a value is accepted'
-		  d.accept(1)
-
-    then:
-      'it is not passed to the consumer'
-      value.get() != 1
-
-	  when:
-		  'a stream is resumed'
-	    composable.resume()
-		 and:
-      'another value is accepted'
-      d.accept(2)
-
-    then:
-      'it is passed to the consumer'
-      value.get() == 2
-
-	  when:
-		  'a stream is cancelled'
-	    composable.cancel()
-		 and:
-      'another value is accepted'
-      d.accept(3)
-
-    then:
-      'it is not passed to the consumer'
-      value.get() != 3
-  }
-
   def 'Accepted errors are passed to a registered Consumer'() {
     given:
       'a composable with a registered consumer of RuntimeExceptions'
@@ -624,15 +582,14 @@ class StreamsSpec extends Specification {
       'a source and a collected stream'
 	    Environment environment = new Environment()
       Deferred source = Streams.<Integer>defer().synchronousDispatcher().env(environment).get()
-      Stream reduced = source.compose().window(1000)
+      Stream reduced = source.compose().window(500)
       def value = reduced.tap()
 
     when:
       'the first values are accepted on the source'
       source.accept(1)
       source.accept(2)
-	    sleep(1100)
-
+	    sleep(1000)
 
     then:
       'the collected list is not yet available'
@@ -642,7 +599,7 @@ class StreamsSpec extends Specification {
       'the second value is accepted'
       source.accept(3)
       source.accept(4)
-	    sleep(1100)
+	    sleep(1000)
 
     then:
       'the collected list contains the first and second elements'
@@ -651,6 +608,74 @@ class StreamsSpec extends Specification {
 	  cleanup:
 		  environment.shutdown()
 
+  }
+
+  def 'Moving Window accumulate items without dropping previous'() {
+    given:
+      'a source and a collected stream'
+      Environment environment = new Environment()
+      Deferred source = Streams.<Integer>defer().synchronousDispatcher().env(environment).get()
+      Stream reduced = source.compose().movingWindow(500, 5)
+      def value = reduced.tap()
+
+    when:
+      'the window accepts first items'
+      source.accept(1)
+      source.accept(2)
+      sleep(1000)
+
+    then:
+      'it outputs received values'
+      value.get() == [1,2]
+
+    when:
+      'the window accepts following items'
+      source.accept(3)
+      source.accept(4)
+      sleep(1000)
+
+    then:
+      'it outputs received values'
+      value.get() == [1,2,3,4]
+
+    when:
+      'the starts dropping items on overflow'
+      source.accept(5)
+      source.accept(6)
+      sleep(1000)
+
+    then:
+      'it outputs received values'
+      value.get() == [2,3,4,5,6]
+
+    cleanup:
+      environment.shutdown()
+  }
+
+  def 'Moving Window will drop overflown items'() {
+    given:
+    'a source and a collected stream'
+    Environment environment = new Environment()
+    Deferred source = Streams.<Integer>defer().synchronousDispatcher().env(environment).get()
+    Stream reduced = source.compose().movingWindow(500, 5)
+    def value = reduced.tap()
+
+    when:
+      'the window overflows'
+      source.accept(1)
+      source.accept(2)
+      source.accept(3)
+      source.accept(4)
+      source.accept(5)
+      source.accept(6)
+        sleep(1000)
+
+    then:
+     'it outputs values dismissing outdated ones'
+      value.get() == [2,3,4,5,6]
+
+    cleanup:
+      environment.shutdown()
   }
 
   def 'Collect will accumulate values from multiple threads'() {

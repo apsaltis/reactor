@@ -4,6 +4,8 @@ import reactor.function.Predicate;
 import reactor.tuple.Tuple;
 import reactor.tuple.Tuple2;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 /**
  * Helper methods for creating {@link Selector}s.
  *
@@ -11,30 +13,30 @@ import reactor.tuple.Tuple2;
  */
 public abstract class Selectors {
 
+	private static final AtomicInteger HASH_CODES = new AtomicInteger(Integer.MIN_VALUE);
+
 	/**
-	 * Creates an anonymous {@link reactor.event.selector.Selector}, returning a {@link Tuple}
-	 * containing the {@link Selector} and the notification key that the selector matches.
+	 * Creates an anonymous {@link reactor.event.selector.Selector}.
 	 *
-	 * @return The Selector notification key tuple
+	 * @return a new Selector
 	 *
 	 * @see ObjectSelector
 	 */
-	public static Tuple2<Selector, Object> anonymous() {
-		Object obj = new Object();
-		return Tuple.of($(obj), obj);
+	public static Selector anonymous() {
+		Object obj = new AnonymousKey();
+		return $(obj);
 	}
 
 	/**
 	 * A short-hand alias for {@link Selectors#anonymous()}.
 	 * <p/>
-	 * Creates an anonymous {@link reactor.event.selector.Selector}, returning a {@link Tuple}
-	 * containing the {@link Selector} and the notification key that the selector matches.
+	 * Creates an anonymous {@link reactor.event.selector.Selector}.
 	 *
-	 * @return The Selector notification key tuple
+	 * @return a new Selector
 	 *
 	 * @see ObjectSelector
 	 */
-	public static Tuple2<Selector, Object> $() {
+	public static Selector $() {
 		return anonymous();
 	}
 
@@ -201,4 +203,12 @@ public abstract class Selectors {
 		return new PredicateSelector(predicate);
 	}
 
+	public static class AnonymousKey {
+		private final int hashCode = HASH_CODES.getAndIncrement() << 2;
+
+		@Override
+		public int hashCode() {
+			return hashCode;
+		}
+	}
 }

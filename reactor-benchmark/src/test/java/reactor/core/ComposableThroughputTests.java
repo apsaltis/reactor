@@ -18,28 +18,26 @@ package reactor.core;
 
 import com.lmax.disruptor.YieldingWaitStrategy;
 import com.lmax.disruptor.dsl.ProducerType;
-import org.junit.Before;
 import org.junit.Test;
 import reactor.AbstractReactorTest;
 import reactor.core.composable.Composable;
 import reactor.core.composable.Deferred;
+import reactor.core.composable.Promise;
 import reactor.core.composable.Stream;
+import reactor.core.composable.spec.Promises;
 import reactor.core.composable.spec.Streams;
-import reactor.event.Event;
 import reactor.event.dispatch.ActorDispatcher;
 import reactor.event.dispatch.BlockingQueueDispatcher;
-import reactor.event.registry.Registration;
-import reactor.function.Consumer;
-import reactor.function.Function;
 import reactor.event.dispatch.Dispatcher;
 import reactor.event.dispatch.RingBufferDispatcher;
+import reactor.function.Consumer;
+import reactor.function.Function;
 import reactor.tuple.Tuple2;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+
+import static junit.framework.Assert.assertEquals;
 
 /**
  * @author Jon Brisbin
@@ -51,108 +49,95 @@ public class ComposableThroughputTests extends AbstractReactorTest {
 	static int runs    = 1000;
 	static int samples = 3;
 
-	List<Integer>  data;
 	CountDownLatch latch;
 
-	@Before
-	public void setup() throws IOException, InterruptedException {
-		data = new ArrayList<Integer>();
-		for (int i = 0; i < length; i++) {
-			data.add(i);
-		}
-
-		latch = new CountDownLatch(length * runs * samples);
-	}
-
 	private Deferred<Integer, Stream<Integer>> createDeferred(Dispatcher dispatcher) {
+		latch = new CountDownLatch(1);
 		Deferred<Integer, Stream<Integer>> dInt = Streams.<Integer>defer()
-				.env(env)
-				.dispatcher(dispatcher)
-				.batchSize(length * runs * samples)
-				.get();
-		dInt.compose().map(new Function<Integer, Integer>() {
-			@Override
-			public Integer apply(Integer integer) {
-				return integer;
-			}
-		})
-				.reduce(new Function<Tuple2<Integer, Integer>, Integer>() {
-					@Override
-					public Integer apply(Tuple2<Integer, Integer> r) {
-						int last = (null != r.getT2() ? r.getT2() : 1);
-						return last + r.getT1();
-					}
-				})
-				.consume(new Consumer<Integer>() {
-					@Override
-					public void accept(Integer integer) {
-						latch.countDown();
-					}
-				});
+		                                                 .env(env)
+		                                                 .dispatcher(dispatcher)
+		                                                 .batchSize(length * runs * samples)
+		                                                 .get();
+		dInt.compose()
+		    .map(new Function<Integer, Integer>() {
+			    @Override
+			    public Integer apply(Integer integer) {
+				    return integer;
+			    }
+		    })
+		    .reduce(new Function<Tuple2<Integer, Integer>, Integer>() {
+			    @Override
+			    public Integer apply(Tuple2<Integer, Integer> r) {
+				    int last = (null != r.getT2() ? r.getT2() : 1);
+				    return last + r.getT1();
+			    }
+		    })
+		    .consume(new Consumer<Integer>() {
+			    @Override
+			    public void accept(Integer integer) {
+				    latch.countDown();
+			    }
+		    });
 		return dInt;
 	}
 
-	private Deferred<Integer, Stream<Integer>> createMapManyDeferred(final boolean newReactor) {
-		Deferred<Integer, Stream<Integer>> dInt = Streams.<Integer>defer()
-				.env(env)
-				.get();
-		dInt.compose().mapMany(new Function<Integer, Composable<Integer>>() {
-			@Override
-			public Composable<Integer> apply(Integer integer) {
-				return Streams.defer(integer).env(env).fork(newReactor).get().compose();
-			}
-		}).consume(new Consumer<Integer>() {
-			@Override
-			public void accept(Integer integer) {
-				latch.countDown();
-			}
-		});
+	private Deferred<Integer, Stream<Integer>> createMapManyDeferred() {
+		latch = new CountDownLatch(length * runs * samples);
+		final Dispatcher dispatcher = env.getDefaultDispatcher();
+		final Deferred<Integer, Stream<Integer>> dInt = Streams.defer(env, dispatcher);
+		dInt.compose()
+		    .mapMany(new Function<Integer, Composable<Integer>>() {
+			    @Override
+			    public Composable<Integer> apply(Integer integer) {
+				    Deferred<Integer, Promise<Integer>> deferred = Promises.defer(env, dispatcher);
+				    try {
+					    return deferred.compose();
+				    } finally {
+					    deferred.accept(integer);
+				    }
+			    }
+		    })
+		    .consume(new Consumer<Integer>() {
+			    @Override
+			    public void accept(Integer integer) {
+				    latch.countDown();
+			    }
+		    });
 		return dInt;
 	}
 
 	private void doTestMapMany(String name) throws InterruptedException {
-		doTest(null, name, createMapManyDeferred(false));
-		for(Registration<? extends Consumer<? extends Event<?>>> registration :
-				env.getRootReactor().getConsumerRegistry()){
-			registration.cancel();
-		}
-	}
-
-	private void doTestMapManyFork(String name) throws InterruptedException {
-		doTest(null, name, createMapManyDeferred(true));
-		for(Registration<? extends Consumer<? extends Event<?>>> registration :
-				env.getRootReactor().getConsumerRegistry()){
-			registration.cancel();
-		}
+		doTest(env.getDefaultDispatcher(), name, createMapManyDeferred());
 	}
 
 	private void doTest(Dispatcher dispatcher, String name) throws InterruptedException {
 		doTest(dispatcher, name, createDeferred(dispatcher));
 	}
 
-	private void doTest(Dispatcher dispatcher, String name, Deferred<Integer,
-			Stream<Integer>> d) throws InterruptedException {
-
+	private void doTest(Dispatcher dispatcher,
+	                    String name,
+	                    Deferred<Integer, Stream<Integer>> d) throws InterruptedException {
 		long start = System.currentTimeMillis();
-		for (int x = 0; x < samples; x++) {
-			for (int i = 0; i < runs; i++) {
-				for (int j = 0; j < length; j++) {
+		for(int x = 0; x < samples; x++) {
+			for(int i = 0; i < runs; i++) {
+				for(int j = 0; j < length; j++) {
 					d.accept(j);
 				}
 			}
 		}
 
-		latch.await(1, TimeUnit.SECONDS);
+		latch.await(10, TimeUnit.SECONDS);
+		assertEquals("Missing accepted events, possibly due to a backlog/batch issue", 0, latch.getCount());
 
 		long end = System.currentTimeMillis();
 		long elapsed = end - start;
 
 		System.out.println(String.format("%s throughput (%sms): %s",
-																		 name,
-																		 elapsed,
-																		 Math.round((length * runs * samples) / (elapsed * 1.0 / 1000)) + "/sec"));
+		                                 name,
+		                                 elapsed,
+		                                 Math.round((length * runs * samples) / (elapsed * 1.0 / 1000)) + "/sec"));
 
-		if(dispatcher != null){
+		if(dispatcher != null) {
 			dispatcher.shutdown();
 		}
 	}
@@ -164,7 +149,7 @@ public class ComposableThroughputTests extends AbstractReactorTest {
 
 	@Test
 	public void testEventLoopDispatcherComposableThroughput() throws InterruptedException {
-		doTest(new BlockingQueueDispatcher("eventLoop", 256), "event loop");
+		doTest(new BlockingQueueDispatcher("eventLoop", 4096), "event loop");
 	}
 
 	@Test
@@ -174,7 +159,7 @@ public class ComposableThroughputTests extends AbstractReactorTest {
 
 	@Test
 	public void testActorDispatcherComposableThroughput() throws InterruptedException {
-		doTest(new ActorDispatcher(new Function<Object,Dispatcher>(){
+		doTest(new ActorDispatcher(new Function<Object, Dispatcher>() {
 			@Override
 			public Dispatcher apply(Object o) {
 				return env.getDispatcher("eventLoop");
@@ -189,13 +174,8 @@ public class ComposableThroughputTests extends AbstractReactorTest {
 	}
 
 	@Test
-	public void testSingleProducerRingBufferDispatcherMapManyComposableThroughput() throws InterruptedException {
+	public void testRingBufferDispatcherMapManyComposableThroughput() throws InterruptedException {
 		doTestMapMany("single-producer ring buffer map many");
-	}
-
-	@Test
-	public void testSingleProducerRingBufferDispatcherMapManyForkedComposableThroughput() throws InterruptedException {
-		doTestMapManyFork("single-producer ring buffer map many forked");
 	}
 
 }

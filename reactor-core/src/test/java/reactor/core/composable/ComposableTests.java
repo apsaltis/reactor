@@ -174,10 +174,10 @@ public class ComposableTests extends AbstractReactorTest {
 	@Test
 	public void testRelaysEventsToReactor() throws InterruptedException {
 		Reactor r = Reactors.reactor().get();
-		Tuple2<Selector, Object> key = Selectors.$();
+		Selector key = Selectors.$();
 
 		final CountDownLatch latch = new CountDownLatch(5);
-		r.on(key.getT1(), new Consumer<Event<Integer>>() {
+		r.on(key, new Consumer<Event<Integer>>() {
 			@Override
 			public void accept(Event<Integer> integerEvent) {
 				latch.countDown();
@@ -188,12 +188,14 @@ public class ComposableTests extends AbstractReactorTest {
 		Stream<Integer> s =
 				d.compose()
 				 .map(STRING_2_INTEGER)
-				 .consume(key.getT2(), r);
+				 .consume(key.getObject(), r);
+		Tap<Integer> tap = s.tap();
 
 		s.flush(); // Trigger the deferred value to be set
 
-		await(s, is(5));
+		//await(s, is(5));
 		assertThat("latch was counted down", latch.getCount(), is(0l));
+		assertThat("value is 5", tap.get(), is(5));
 	}
 
 	@Test

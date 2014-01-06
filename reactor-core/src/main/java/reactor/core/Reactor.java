@@ -30,7 +30,6 @@ import reactor.event.routing.EventRouter;
 import reactor.event.selector.ClassSelector;
 import reactor.event.selector.Selector;
 import reactor.event.selector.Selectors;
-import reactor.event.selector.UriSelector;
 import reactor.filter.PassThroughFilter;
 import reactor.function.Consumer;
 import reactor.function.Function;
@@ -40,7 +39,8 @@ import reactor.tuple.Tuple2;
 import reactor.util.Assert;
 import reactor.util.UUIDUtils;
 
-import java.util.*;
+import java.util.List;
+import java.util.UUID;
 
 /**
  * A reactor is an event gateway that allows other components to register {@link Event} {@link Consumer}s that can
@@ -64,17 +64,18 @@ public class Reactor implements Observable {
 	private final Registry<Consumer<? extends Event<?>>> consumerRegistry;
 	private final EventRouter                            eventRouter;
 
-	private final Object   defaultKey      = new Object();
-	private final Selector defaultSelector = Selectors.$(defaultKey);
+	private final Selector defaultSelector = Selectors.anonymous();
+	private final Object   defaultKey      = defaultSelector.getObject();
 
-	private final UUID                id             = UUIDUtils.create();
-	private final Consumer<Throwable> errorHandler   = new Consumer<Throwable>() {
+	private final Consumer<Throwable> errorHandler = new Consumer<Throwable>() {
 		@Override
 		public void accept(Throwable t) {
 			Class<? extends Throwable> type = t.getClass();
 			eventRouter.route(type, Event.wrap(t).setKey(type), consumerRegistry.select(type), null, null);
 		}
 	};
+
+	private volatile UUID id;
 
 	/**
 	 * Create a new {@literal Reactor} that uses the given {@link Dispatcher}. The reactor will use a default {@link
@@ -90,23 +91,22 @@ public class Reactor implements Observable {
 		     null);
 	}
 
-  /**
-   * Create a new {@literal Reactor} that uses the given {@link Dispatcher}. The reactor will use a default {@link
-   * CachingRegistry}.
-   *
-   * @param dispatcher
-   * 		The {@link Dispatcher} to use. May be {@code null} in which case a new synchronous  dispatcher is
-   * 		used.
-   * @param eventRouter
-   * 		The {@link EventRouter} used to route events to {@link Consumer Consumers}. May be {@code null}
-   * 		in which case the default event router that broadcasts events to all of the registered consumers
-   * 		that {@link Selector#matches(Object) match} the notification key and does not perform any type
-   * 		conversion will be used.
-   */
-  public Reactor(Dispatcher dispatcher,
-                 EventRouter eventRouter) {
-    this(dispatcher, eventRouter, new CachingRegistry<Consumer<? extends Event<?>>>());
-  }
+	/**
+	 * Create a new {@literal Reactor} that uses the given {@link Dispatcher}. The reactor will use a default {@link
+	 * CachingRegistry}.
+	 *
+	 * @param dispatcher
+	 * 		The {@link Dispatcher} to use. May be {@code null} in which case a new synchronous  dispatcher is
+	 * 		used.
+	 * @param eventRouter
+	 * 		The {@link EventRouter} used to route events to {@link Consumer Consumers}. May be {@code null}
+	 * 		in which case the default event router that broadcasts events to all of the registered consumers
+	 * 		that {@link Selector#matches(Object) match} the notification key and does not perform any type
+	 * 		conversion will be used.
+	 */
+	public Reactor(Dispatcher dispatcher, EventRouter eventRouter) {
+		this(dispatcher, eventRouter, new CachingRegistry<Consumer<? extends Event<?>>>());
+	}
 
 	/**
 	 * Create a new {@literal Reactor} that uses the given {@code dispatcher} and {@code eventRouter}.
@@ -119,10 +119,12 @@ public class Reactor implements Observable {
 	 * 		in which case the default event router that broadcasts events to all of the registered consumers
 	 * 		that {@link Selector#matches(Object) match} the notification key and does not perform any type
 	 * 		conversion will be used.
-   * @param consumerRegistry
-   *    The {@link Registry} to be used to match {@link Selector} and dispatch to {@link Consumer}.
+	 * @param consumerRegistry
+	 * 		The {@link Registry} to be used to match {@link Selector} and dispatch to {@link Consumer}.
 	 */
-  public Reactor(Dispatcher dispatcher, EventRouter eventRouter, Registry<Consumer<? extends Event<?>>> consumerRegistry) {
+	public Reactor(Dispatcher dispatcher,
+	               EventRouter eventRouter,
+	               Registry<Consumer<? extends Event<?>>> consumerRegistry) {
 		this.dispatcher = dispatcher == null ? new SynchronousDispatcher() : dispatcher;
 		this.eventRouter = eventRouter == null ? DEFAULT_EVENT_ROUTER : eventRouter;
 		this.consumerRegistry = consumerRegistry;
@@ -143,19 +145,17 @@ public class Reactor implements Observable {
 				}
 			}
 		});
-		if(LoggerFactory.getLogger(Reactor.class).isDebugEnabled()) {
-			this.on(new ClassSelector(Throwable.class), new Consumer<Event<Throwable>>() {
-				Logger log;
+		this.on(new ClassSelector(Throwable.class), new Consumer<Event<Throwable>>() {
+			Logger log;
 
-				@Override
-				public void accept(Event<Throwable> ev) {
-					if(null == log) {
-						log = LoggerFactory.getLogger(Reactor.class);
-					}
-					log.error(ev.getData().getMessage(), ev.getData());
+			@Override
+			public void accept(Event<Throwable> ev) {
+				if(null == log) {
+					log = LoggerFactory.getLogger(Reactor.class);
 				}
-			});
-		}
+				log.error(ev.getData().getMessage(), ev.getData());
+			}
+		});
 	}
 
 	/**
@@ -163,7 +163,10 @@ public class Reactor implements Observable {
 	 *
 	 * @return The {@link UUID} of this {@literal Reactor}.
 	 */
-	public UUID getId() {
+	public synchronized UUID getId() {
+		if(null == id) {
+			id = UUIDUtils.create();
+		}
 		return id;
 	}
 
@@ -196,79 +199,14 @@ public class Reactor implements Observable {
 	}
 
 
-	/**
-	 * Attach control consumers to the passed {@param observable}. Control consumers react on specific key to
-	 * trigger operating actions such as pause and cancel to the selected consumers from {@link
-	 * this#getConsumerRegistry()}} matching the passed {@link reactor.event.Event#getData()}.
-	 * Key format is an URI : 'control://[host]/[pause|cancel|...]'
-	 *
-	 * @param observable the observable that controls {@link this#getConsumerRegistry()} and state
-	 *
-	 * @return  {@link this}.
-	 */
-	public Reactor control(Observable observable){
-		observable.on(new UriSelector("control://*/pause"), new Consumer<Event<?>>() {
-			@Override
-			public void accept(Event<?> event) {
-				for(Registration<? extends Consumer<? extends Event<?>>> registration :
-						consumerRegistry.select(event.getData())){
-					registration.pause();
-				}
-			}
-		});
-		observable.on(new UriSelector("control://*/resume"), new Consumer<Event<?>>() {
-			@Override
-			public void accept(Event<?> event) {
-				for(Registration<? extends Consumer<? extends Event<?>>> registration :
-						consumerRegistry.select(event.getData())){
-					registration.resume();
-				}
-			}
-		});
-		observable.on(new UriSelector("control://*/cancel"), new Consumer<Event<?>>() {
-			@Override
-			public void accept(Event<?> event) {
-				for(Registration<? extends Consumer<? extends Event<?>>> registration :
-						consumerRegistry.select(event.getData())){
-					registration.cancel();
-				}
-			}
-		});
-		return this;
-	}
-
-	/**
-	 * Attach control consumers to this reactor. Control consumers react on specific key to
-	 * trigger operating actions such as pause and cancel to the selected consumers from {@link
-	 * this#getConsumerRegistry()}} matching the passed {@link reactor.event.Event#getData()}.
-	 * Key format is an URI : 'control://[host]/[pause|cancel|...]'
-	 *
-	 * @return {@link this}.
-	 */
-	public Reactor control(){
-		return control(this);
-	}
-/**
-	 *TODO
-	 * @param observable the observable that monitor {@link this} Reactor
-	 *
-	 * @return {@link this}.
-	 */
-	public Reactor monitor(Observable observable){
-
-		return this;
-	}
-
-	/**TODO
-	 */
-	public Reactor monitor(){
-		return monitor(this);
-	}
-
 	@Override
 	public boolean respondsToKey(Object key) {
-		Assert.notNull(key, "Key cannot be null.");
-		return consumerRegistry.select(key).iterator().hasNext();
+		for(Registration<?> reg : consumerRegistry.select(key)) {
+			if(!reg.isCancelled()) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	@Override
@@ -294,8 +232,8 @@ public class Reactor implements Observable {
 	public <E extends Event<?>> Reactor notify(Object key, E ev, Consumer<E> onComplete) {
 		Assert.notNull(key, "Key cannot be null.");
 		Assert.notNull(ev, "Event cannot be null.");
-
-		dispatcher.dispatch(key, (E)ev.setKey(key), consumerRegistry, errorHandler, eventRouter, onComplete);
+		ev.setKey(key);
+		dispatcher.dispatch(key, ev, consumerRegistry, errorHandler, eventRouter, onComplete);
 
 		return this;
 	}
@@ -347,9 +285,9 @@ public class Reactor implements Observable {
 
 	@Override
 	public <E extends Event<?>> Reactor sendAndReceive(Object key, E ev, Consumer<E> reply) {
-		Tuple2<Selector, Object> anon = Selectors.anonymous();
-		on(anon.getT1(), new SingleUseConsumer<E>(reply)).cancelAfterUse();
-		notify(key, ev.setReplyTo(anon.getT2()));
+		Selector sel = Selectors.anonymous();
+		on(sel, new SingleUseConsumer<E>(reply)).cancelAfterUse();
+		notify(key, ev.setReplyTo(sel.getObject()));
 		return this;
 	}
 
@@ -385,15 +323,8 @@ public class Reactor implements Observable {
 			return false;
 		}
 
-		Reactor reactor = (Reactor)o;
+		return hashCode() == o.hashCode();
 
-		return id.equals(reactor.id);
-
-	}
-
-	@Override
-	public int hashCode() {
-		return id.hashCode();
 	}
 
 	public static class ReplyToEvent<T> extends Event<T> {

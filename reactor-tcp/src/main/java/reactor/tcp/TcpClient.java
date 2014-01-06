@@ -48,11 +48,12 @@ import java.util.Iterator;
  * @param <IN>  The type that will be received by this client
  * @param <OUT> The type that will be sent by this client
  * @author Jon Brisbin
+ * @author Stephane Maldini
  */
 public abstract class TcpClient<IN, OUT> {
 
-	private final Tuple2<Selector, Object> open  = Selectors.$();
-	private final Tuple2<Selector, Object> close = Selectors.$();
+	private final Selector open  = Selectors.$();
+	private final Selector close = Selectors.$();
 
 	private final Reactor                reactor;
 	private final Codec<Buffer, IN, OUT> codec;
@@ -108,11 +109,8 @@ public abstract class TcpClient<IN, OUT> {
 				new Consumer<Void>() {
 					@Override
 					public void accept(Void v) {
-						for (Registration<? extends TcpConnection<IN, OUT>> reg : connections) {
-							reg.getObject().close();
-							reg.cancel();
-						}
 						doClose(d);
+						connections.clear();
 					}
 				},
 				null,
@@ -166,9 +164,8 @@ public abstract class TcpClient<IN, OUT> {
 		Assert.notNull(channel, "Channel cannot be null");
 		for (Registration<? extends TcpConnection<IN, OUT>> reg : connections.select(channel)) {
 			TcpConnection<IN, OUT> conn = reg.getObject();
-			reg.getObject().close();
-			notifyClose(conn);
 			reg.cancel();
+			notifyClose(conn);
 		}
 	}
 
@@ -197,7 +194,7 @@ public abstract class TcpClient<IN, OUT> {
 	 * @param conn The {@link TcpConnection} that was opened.
 	 */
 	protected void notifyOpen(@Nonnull TcpConnection<IN, OUT> conn) {
-		reactor.notify(open.getT2(), Event.wrap(conn));
+		reactor.notify(open.getObject(), Event.wrap(conn));
 	}
 
 	/**
@@ -206,7 +203,7 @@ public abstract class TcpClient<IN, OUT> {
 	 * @param conn The {@link TcpConnection} that was closed.
 	 */
 	protected void notifyClose(@Nonnull TcpConnection<IN, OUT> conn) {
-		reactor.notify(close.getT2(), Event.wrap(conn));
+		reactor.notify(close.getObject(), Event.wrap(conn));
 	}
 
 	/**

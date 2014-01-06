@@ -12,9 +12,7 @@ import reactor.function.support.CancelConsumerException;
 import reactor.function.support.SingleUseConsumer;
 import reactor.support.NamedDaemonThreadFactory;
 import reactor.util.Assert;
-import reactor.util.UUIDUtils;
 
-import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -55,7 +53,7 @@ public class HashWheelTimer {
 
 	private static final Logger LOG = LoggerFactory.getLogger(HashWheelTimer.class);
 
-	private final Registry<Consumer<Long>> tasks = new CachingRegistry<Consumer<Long>>(false);
+	private final Registry<Consumer<Long>> tasks = new CachingRegistry<Consumer<Long>>();
 	private final int    resolution;
 	private final Thread loop;
 

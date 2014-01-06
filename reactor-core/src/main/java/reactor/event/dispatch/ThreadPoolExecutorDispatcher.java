@@ -69,6 +69,20 @@ public class ThreadPoolExecutorDispatcher extends BaseLifecycleDispatcher {
 		);
 	}
 
+    public ThreadPoolExecutorDispatcher(ExecutorService executor, int backlog) {
+        this.executor = executor;
+        this.readyTasks = new LoadingPool<ThreadPoolTask>(
+                new Supplier<ThreadPoolTask>() {
+                    @Override
+                    public ThreadPoolTask get() {
+                        return new ThreadPoolTask();
+                    }
+                },
+                backlog,
+                200l
+        );
+    }
+
 	@Override
 	public boolean awaitAndShutdown(long timeout, TimeUnit timeUnit) {
 		shutdown();
@@ -138,20 +152,25 @@ public class ThreadPoolExecutorDispatcher extends BaseLifecycleDispatcher {
 
 		@Override
 		protected void execute() {
-			eventRouter.route(key,
-					event,
-					(null != consumerRegistry ? consumerRegistry.select(key) : null),
-					completionConsumer,
-					errorConsumer);
+				eventRouter.route(key,
+						event,
+						(null != consumerRegistry ? consumerRegistry.select(key) : null),
+						completionConsumer,
+						errorConsumer);
 
-			Task<?> task;
-			for(;;){
-				task = delayedTaskQueue.poll();
-				if(null == task){
-					break;
+				Task<?> task;
+				for (; ; ) {
+					task = delayedTaskQueue.poll();
+					if (null == task) {
+						break;
+					}
+					task.eventRouter.route(task.key,
+							task.event,
+							(null != task.consumerRegistry ? task.consumerRegistry.select(task.key) : null),
+							task.completionConsumer,
+							task.errorConsumer);
+
 				}
-				task.execute();
-			}
 		}
 
 		@Override

@@ -16,11 +16,11 @@
 
 package reactor.core.composable;
 
-import reactor.core.action.*;
 import reactor.core.Observable;
 import reactor.core.Reactor;
+import reactor.core.action.*;
 import reactor.event.Event;
-import reactor.event.lifecycle.Lifecycle;
+import reactor.event.selector.ObjectSelector;
 import reactor.event.selector.Selector;
 import reactor.event.selector.Selectors;
 import reactor.function.Consumer;
@@ -42,11 +42,12 @@ import javax.annotation.Nullable;
  * @author Jon Brisbin
  * @author Andy Wilkinson
  */
-public abstract class Composable<T> implements Pipeline<T>, Lifecycle {
+public abstract class Composable<T> implements Pipeline<T> {
 
-	private final Tuple2<Selector, Object> accept;
-	private final Tuple2<Selector, Object> error = Selectors.$();
-	private final Tuple2<Selector, Object> flush = Selectors.$();
+	private final Selector acceptSelector;
+	private final Object acceptKey;
+	private final Selector error = Selectors.anonymous();
+	private final Selector flush = Selectors.anonymous();
 
 	private final Observable    events;
 	private final Composable<?> parent;
@@ -57,15 +58,21 @@ public abstract class Composable<T> implements Pipeline<T>, Lifecycle {
 
 
 	protected <U> Composable(@Nullable Observable observable, @Nullable Composable<U> parent,
-	                         @Nullable Tuple2<Selector, Object> acceptSelector) {
+	                         @Nullable Tuple2<Selector, Object> acceptSelectorTuple) {
 		Assert.state(observable != null || parent != null, "One of 'observable' or 'parent'  cannot be null.");
 		this.parent = parent;
 		this.events = parent == null ? observable : parent.events;
-		this.accept = null == acceptSelector ? Selectors.$() : acceptSelector;
+		if(null == acceptSelectorTuple){
+			this.acceptSelector =  Selectors.anonymous();
+			this.acceptKey = acceptSelector.getObject();
+		}else{
+			this.acceptKey = acceptSelectorTuple.getT1();
+			this.acceptSelector =  new ObjectSelector<Object>(acceptSelectorTuple.getT2());
+		}
 
 		if (parent != null) {
-			events.on(parent.error.getT1(),
-					new ConnectAction<Throwable>(events, error.getT2(), null));
+			events.on(parent.error,
+					new ConnectAction<Throwable>(events, error.getObject(), null));
 		}
 	}
 
@@ -80,7 +87,7 @@ public abstract class Composable<T> implements Pipeline<T>, Lifecycle {
 	 */
 	public <E extends Throwable> Composable<T> when(@Nonnull final Class<E> exceptionType,
 	                                                @Nonnull final Consumer<E> onError) {
-		this.events.on(error.getT1(), new Action<E>(getObservable(), getAccept()) {
+		this.events.on(error, new Action<E>(events, null) {
 			@Override
 			protected void doAccept(Event<E> e) {
 				if (Selectors.T(exceptionType).matches(e.getData().getClass())) {
@@ -100,7 +107,7 @@ public abstract class Composable<T> implements Pipeline<T>, Lifecycle {
 	 */
 	public Composable<T> connect(@Nonnull final Composable<T> composable) {
 		this.consume(composable);
-		events.on(error.getT1(), new ConnectAction<Throwable>(composable.events, composable.error.getT2(), null));
+		events.on(error, new ConnectAction<Throwable>(composable.events, composable.error.getObject(), null));
 		return this;
 	}
 
@@ -115,7 +122,7 @@ public abstract class Composable<T> implements Pipeline<T>, Lifecycle {
 		if (composable == this) {
 			throw new IllegalArgumentException("Trying to consume itself, leading to erroneous recursive calls");
 		}
-		add(new ConnectAction<T>(composable.events, composable.accept.getT2(), composable.error.getT2()));
+		add(new ConnectAction<T>(composable.events, composable.acceptKey, composable.error.getObject()));
 
 		return this;
 	}
@@ -128,7 +135,7 @@ public abstract class Composable<T> implements Pipeline<T>, Lifecycle {
 	 * @return {@literal this}
 	 */
 	public Composable<T> consume(@Nonnull final Consumer<T> consumer) {
-		add(new CallbackAction<T>(consumer, events, error.getT2()));
+		add(new CallbackAction<T>(consumer, events, error.getObject()));
 		return this;
 	}
 
@@ -140,7 +147,7 @@ public abstract class Composable<T> implements Pipeline<T>, Lifecycle {
 	 * @return {@literal this}
 	 */
 	public Composable<T> consumeEvent(@Nonnull final Consumer<Event<T>> consumer) {
-		add(new CallbackEventAction<T>(consumer, events, error.getT2()));
+		add(new CallbackEventAction<T>(consumer, events, error.getObject()));
 		return this;
 	}
 
@@ -170,8 +177,8 @@ public abstract class Composable<T> implements Pipeline<T>, Lifecycle {
 		add(new MapAction<T, V>(
 				fn,
 				d.compose().getObservable(),
-				d.compose().getAccept().getT2(),
-				error.getT2()));
+				d.compose().getAcceptKey(),
+				error.getObject()));
 		return d.compose();
 	}
 
@@ -189,8 +196,8 @@ public abstract class Composable<T> implements Pipeline<T>, Lifecycle {
 		add(new MapManyAction<T, V, C>(
 				fn,
 				d.compose().getObservable(),
-				d.compose().getAccept().getT2(),
-				error.getT2()));
+				d.compose().getAcceptKey(),
+				error.getObject()));
 		return d.compose();
 	}
 
@@ -233,9 +240,9 @@ public abstract class Composable<T> implements Pipeline<T>, Lifecycle {
 	 */
 	public Composable<T> filter(@Nonnull final Predicate<T> p, final Composable<T> elseComposable) {
 		final Deferred<T, ? extends Composable<T>> d = createDeferred();
-		add(new FilterAction<T>(p, d.compose().getObservable(), d.compose().getAccept().getT2(), error.getT2(),
+		add(new FilterAction<T>(p, d.compose().getObservable(), d.compose().getAcceptKey(), error.getObject(),
 				elseComposable != null ? elseComposable.events : null,
-				elseComposable != null ? elseComposable.accept.getT2() : null));
+				elseComposable != null ? elseComposable.acceptKey : null));
 		return d.compose();
 	}
 
@@ -260,7 +267,7 @@ public abstract class Composable<T> implements Pipeline<T>, Lifecycle {
 			that = that.parent;
 		}
 		return ActionUtils.browseReactor((Reactor) that.events,
-				that.accept.getT2(), that.error.getT2(), that.flush.getT2()
+				that.acceptKey, that.error.getObject(), that.flush.getObject()
 		);
 	}
 
@@ -271,50 +278,15 @@ public abstract class Composable<T> implements Pipeline<T>, Lifecycle {
 	 * @return {@literal this}
 	 */
 	public Composable<T> add(Action<T> action) {
-		this.events.on(accept.getT1(), action);
+		this.events.on(acceptSelector, action);
 		return this;
 	}
-
-
-	/**
-	 * Pause events in this Composable
-	 *
-	 * @return {@literal this}
-	 */
-	@Override
-	public Composable<T> pause() {
-		this.events.notify("control://localhost/pause", Event.wrap(accept.getT2()));
-		return this;
-	}
-
-	/**
-	 * Pause events in this Composable
-	 *
-	 * @return {@literal this}
-	 */
-	@Override
-	public Composable<T> resume() {
-		this.events.notify("control://localhost/resume", Event.wrap(accept.getT2()));
-		return this;
-	}
-
-	/**
-	 * Pause events in this Composable
-	 *
-	 * @return {@literal this}
-	 */
-	@Override
-	public Composable<T> cancel() {
-		this.events.notify("control://localhost/cancel", Event.wrap(accept.getT2()));
-		return this;
-	}
-
 
 	/**
 	 * Notify this {@code Composable} hat a flush is being requested by this {@code Composable}.
 	 */
 	void notifyFlush() {
-		events.notify(flush.getT2(), new Event<Void>(null));
+		events.notify(flush.getObject(), new Event<Void>(null));
 	}
 
 	/**
@@ -327,7 +299,7 @@ public abstract class Composable<T> implements Pipeline<T>, Lifecycle {
 	}
 
 	void notifyValue(Event<T> value) {
-		events.notify(accept.getT2(), value);
+		events.notify(acceptKey, value);
 	}
 
 	/**
@@ -336,7 +308,7 @@ public abstract class Composable<T> implements Pipeline<T>, Lifecycle {
 	 * @param error the error to propagate
 	 */
 	void notifyError(Throwable error) {
-		events.notify(this.error.getT2(), Event.wrap(error));
+		events.notify(this.error.getObject(), Event.wrap(error));
 	}
 
 	/**
@@ -363,8 +335,16 @@ public abstract class Composable<T> implements Pipeline<T>, Lifecycle {
 	 *
 	 * @return
 	 */
-	protected Tuple2<Selector, Object> getAccept() {
-		return this.accept;
+	protected Object getAcceptKey() {
+		return this.acceptKey;
+	}
+	/**
+	 * Get the anonymous {@link Selector} and notification key {@link Tuple2} for doing accepts.
+	 *
+	 * @return
+	 */
+	protected Selector getAcceptSelector() {
+		return this.acceptSelector;
 	}
 
 	/**
@@ -372,7 +352,7 @@ public abstract class Composable<T> implements Pipeline<T>, Lifecycle {
 	 *
 	 * @return
 	 */
-	protected Tuple2<Selector, Object> getError() {
+	protected Selector getError() {
 		return this.error;
 	}
 
@@ -381,7 +361,7 @@ public abstract class Composable<T> implements Pipeline<T>, Lifecycle {
 	 *
 	 * @return
 	 */
-	protected Tuple2<Selector, Object> getFlush() {
+	protected Selector getFlush() {
 		return this.flush;
 	}
 
