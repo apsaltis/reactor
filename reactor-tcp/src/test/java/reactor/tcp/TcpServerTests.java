@@ -524,7 +524,7 @@ public class TcpServerTests {
 			}
 		};
 
-		List<Consumer<TcpConnection<SimpleMessage, SimpleMessage>>> list = new ArrayList<>();
+		List<Consumer<TcpConnection<SimpleMessage, SimpleMessage>>> list = new ArrayList<Consumer<TcpConnection<SimpleMessage, SimpleMessage>>>();
 		list.add(consumer1);
 		list.add(consumer2);
 

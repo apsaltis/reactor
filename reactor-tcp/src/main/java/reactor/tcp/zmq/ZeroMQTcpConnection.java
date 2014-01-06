@@ -27,7 +27,7 @@ public class ZeroMQTcpConnection<IN, OUT> extends AbstractTcpConnection<IN, OUT>
 
 	private static final Logger LOG = LoggerFactory.getLogger(ZeroMQTcpConnection.class);
 
-	private final Tuple2<Selector, Object> close = $();
+	private final Selector close = $();
 	private final    Codec<Buffer, IN, OUT> codec;
 	private final    byte[]                 channelId;
 	private volatile ZMQ.Socket             socket;
@@ -72,7 +72,7 @@ public class ZeroMQTcpConnection<IN, OUT> extends AbstractTcpConnection<IN, OUT>
 	@Override
 	public void close() {
 		super.close();
-		eventsReactor.notify(close.getT2(), Event.wrap(null));
+		eventsReactor.notify(close.getObject(), Event.wrap(null));
 	}
 
 	@Override
@@ -110,7 +110,7 @@ public class ZeroMQTcpConnection<IN, OUT> extends AbstractTcpConnection<IN, OUT>
 	private class ZeroMQTcpConnectionConsumerSpec<IN, OUT> implements ConsumerSpec<IN, OUT> {
 		@Override
 		public ConsumerSpec close(Runnable onClose) {
-			eventsReactor.on(close.getT1(), Fn.<Event<IN>>consumer(onClose));
+			eventsReactor.on(close, Fn.<Event<IN>>consumer(onClose));
 			return this;
 		}
 

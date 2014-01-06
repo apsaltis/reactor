@@ -23,7 +23,6 @@ import reactor.tcp.TcpConnection;
 import reactor.tcp.TcpServer;
 import reactor.tcp.config.ServerSocketOptions;
 import reactor.tcp.config.SslOptions;
-import reactor.tuple.Tuple2;
 import reactor.util.Assert;
 import reactor.util.UUIDUtils;
 
@@ -47,10 +46,10 @@ public class ZeroMQTcpServer<IN, OUT> extends TcpServer<IN, OUT> {
 
 	private static final Logger LOG = LoggerFactory.getLogger(ZeroMQTcpServer.class);
 
-	private final UUID                     id       = UUIDUtils.create();
-	private final Object                   monitor  = new Object();
-	private final Tuple2<Selector, Object> shutdown = $();
-	private final AtomicBoolean            started  = new AtomicBoolean(false);
+	private final UUID          id       = UUIDUtils.create();
+	private final Object        monitor  = new Object();
+	private final Selector      shutdown = $();
+	private final AtomicBoolean started  = new AtomicBoolean(false);
 	private final    InetSocketAddress   listenAddress;
 	private final    ServerSocketOptions options;
 	private final    SslOptions          sslOpts;
@@ -128,7 +127,7 @@ public class ZeroMQTcpServer<IN, OUT> extends TcpServer<IN, OUT> {
 	@Override
 	public Promise<Void> shutdown() {
 		final Deferred<Void, Promise<Void>> d = Promises.defer(env, getReactor().getDispatcher());
-		getReactor().notify(shutdown.getT2());
+		getReactor().notify(shutdown.getObject());
 		d.accept((Void)null);
 		workers.shutdown();
 		started.set(false);
@@ -145,11 +144,11 @@ public class ZeroMQTcpServer<IN, OUT> extends TcpServer<IN, OUT> {
 	@SuppressWarnings("unchecked")
 	@Override
 	protected <C> TcpConnection<IN, OUT> createConnection(C channel) {
-		return new ZeroMQTcpConnection<>(env,
-		                                 getCodec(),
-		                                 getReactor().getDispatcher(),
-		                                 getReactor(),
-		                                 (byte[])channel);
+		return new ZeroMQTcpConnection<IN, OUT>(env,
+		                                        getCodec(),
+		                                        getReactor().getDispatcher(),
+		                                        getReactor(),
+		                                        (byte[])channel);
 	}
 
 	private class ZeroMQDealerWorker implements Runnable {
