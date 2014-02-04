@@ -22,13 +22,13 @@ public class Graph<T> implements Consumer<T> {
 	private final Map<String, Node<T>> nodes = new ConcurrentHashMap<String, Node<T>>();
 
 	private final Environment                 env;
-	private final Dispatcher                  dispatcher;
+	private final Dispatcher                  defaultDispatcher;
 	private final BatchFactorySupplier<Event> eventFactory;
 	private       Node<T>                     startNode;
 
-	private Graph(Environment env, Dispatcher dispatcher) {
+	private Graph(Environment env, Dispatcher defaultDispatcher) {
 		this.env = env;
-		this.dispatcher = dispatcher;
+		this.defaultDispatcher = defaultDispatcher;
 		this.eventFactory = new BatchFactorySupplier<Event>(
 				1024,
 				new Supplier<Event>() {
@@ -56,12 +56,17 @@ public class Graph<T> implements Consumer<T> {
 	}
 
 	public Node<T> node() {
-		return node(UUIDUtils.create().toString());
+		return node(UUIDUtils.create().toString(), null);
 	}
 
 	public Node<T> node(String name) {
+		return node(name, null);
+	}
+
+	public Node<T> node(String name, String dispatcher) {
 		Assert.isTrue(!nodes.containsKey(name), "A Node is already created with name '" + name + "'");
-		Reactor reactor = Reactors.reactor(env, dispatcher);
+		Dispatcher d = (null != dispatcher ? env.getDispatcher(dispatcher) : defaultDispatcher);
+		Reactor reactor = Reactors.reactor(env, d);
 		Node<T> node = new Node<T>(name, this, reactor);
 		nodes.put(name, node);
 		return node;

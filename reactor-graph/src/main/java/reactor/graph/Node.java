@@ -2,6 +2,7 @@ package reactor.graph;
 
 import reactor.core.Observable;
 import reactor.event.Event;
+import reactor.event.selector.Selectors;
 import reactor.event.support.EventConsumer;
 import reactor.function.Consumer;
 import reactor.function.Predicate;
@@ -19,6 +20,17 @@ public class Node<T> {
 		this.name = name;
 		this.graph = graph;
 		this.observable = observable;
+	}
+
+	public Route<Throwable> uncaught(Class<? extends Throwable> uncaughtExceptionType) {
+		final Route<Throwable> route = new Route<Throwable>(this, observable, null);
+		observable.on(Selectors.type(uncaughtExceptionType), new Consumer<Event<Throwable>>() {
+			@Override
+			public void accept(Event<Throwable> ev) {
+				route.notifyValue(ev);
+			}
+		});
+		return route;
 	}
 
 	public Route<T> when(final Predicate<T> predicate) {

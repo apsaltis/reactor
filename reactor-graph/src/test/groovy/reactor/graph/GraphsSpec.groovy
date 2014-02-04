@@ -1,6 +1,7 @@
 package reactor.graph
 
 import reactor.core.Environment
+import reactor.function.Consumer
 import reactor.function.Predicate
 import spock.lang.Specification
 
@@ -46,7 +47,7 @@ class GraphsSpec extends Specification {
 			graph.node("count.hello").then({ s -> helloLength = s.size() })
 			graph.node("count.goodbye").then({ s -> goodbyeLength = s.size() })
 			graph.node("start").
-					when({ String s -> s.startsWith("Hello") } as Predicate<String>).
+					when({ s -> s.startsWith("Hello") } as Predicate<String>).
 					routeTo("count.hello").
 					otherwise().
 					routeTo("count.goodbye")
@@ -57,6 +58,23 @@ class GraphsSpec extends Specification {
 		then: "counts should be correct"
 			helloLength == 12
 			goodbyeLength == 14
+
+	}
+
+	def "Graphs provide error handling"() {
+
+		given: "a Graph"
+			int errorCount = 0
+			Graph<String> graph = Graph.create(env, "sync")
+
+		when: "Routes are defined which produce exceptions"
+			graph.node().
+					then({ s -> Integer.parseInt(s) } as Consumer<String>).
+					uncaught(NumberFormatException).<String> end({ t -> errorCount++ } as Consumer<NumberFormatException>)
+			graph.accept("Hello World!")
+
+		then: "error count was incremented"
+			errorCount == 1
 
 	}
 
