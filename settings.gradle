@@ -5,4 +5,5 @@ include 'reactor-core',
 		'reactor-spring',
 		'reactor-logback',
 		'reactor-benchmark',
+		'reactor-graph',
 		'reactor-tcp'

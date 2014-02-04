@@ -373,6 +373,15 @@ project('reactor-tcp') {
 	}
 }
 
+project('reactor-graph') {
+	description = 'Graph API'
+
+	dependencies {
+		compile project(':reactor-core')
+	}
+}
+
+
 task wrapper(type: Wrapper, description: "Create a Gradle self-download wrapper") {
 	group = 'Project Setup'
 	gradleVersion = "$gradleVersion"
