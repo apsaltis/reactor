@@ -10,6 +10,9 @@ import reactor.function.Predicate;
 import reactor.util.UUIDUtils;
 
 /**
+ * A {@literal Node} represents an action or a point at which events can be routed to other {@literal Node Nodes} based
+ * on different criteria.
+ *
  * @author Jon Brisbin
  */
 public class Node<T> {
@@ -33,6 +36,11 @@ public class Node<T> {
 		this.parent = parent;
 	}
 
+	/**
+	 * Get the name of this {@literal Node}.
+	 *
+	 * @return this Node's name
+	 */
 	public String getName() {
 		return name;
 	}
@@ -51,6 +59,15 @@ public class Node<T> {
 		return newNode;
 	}
 
+	/**
+	 * Create a {@link Route} that will publish values that pass the given {@link reactor.function.Predicate} test and
+	 * publish values that fail the test into the Route's {@link reactor.graph.Route#otherwise()} {@literal Route}.
+	 *
+	 * @param predicate
+	 * 		the {@link reactor.function.Predicate} test
+	 *
+	 * @return a new {@link reactor.graph.Route}
+	 */
 	public Route<T> when(final Predicate<T> predicate) {
 		final Route<T> route = createRoute();
 		consumeValue(new Consumer<Event<T>>() {
@@ -66,6 +83,16 @@ public class Node<T> {
 		return route;
 	}
 
+	/**
+	 * Transform the values coming into this {@literal Node} by applying the given {@link reactor.function.Function}.
+	 *
+	 * @param fn
+	 * 		the transformation {@link reactor.function.Function}
+	 * @param <V>
+	 * 		the type of the returned value
+	 *
+	 * @return a new {@literal Node}
+	 */
 	public <V> Node<V> then(final Function<T, V> fn) {
 		final Node<V> newNode = createChild();
 		consumeValue(new Consumer<Event<T>>() {
@@ -83,6 +110,14 @@ public class Node<T> {
 		return newNode;
 	}
 
+	/**
+	 * Consume values coming into this {@literal Node}.
+	 *
+	 * @param consumer
+	 * 		the {@link reactor.function.Consumer} that will consume values
+	 *
+	 * @return {@literal this}
+	 */
 	public Node<T> consume(final Consumer<T> consumer) {
 		consumeValue(new Consumer<Event<T>>() {
 			@SuppressWarnings("unchecked")

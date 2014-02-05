@@ -8,6 +8,8 @@ import reactor.function.Consumer;
 import reactor.function.Function;
 
 /**
+ * A {@literal Route} represents a connection between two {@literal Nodes}.
+ *
  * @author Jon Brisbin
  */
 public class Route<T> {
@@ -24,6 +26,15 @@ public class Route<T> {
 		this.observable = observable;
 	}
 
+	/**
+	 * Route value events coming into this {@literal Route} to the named {@literal Node}, which must already exist in the
+	 * {@literal Graph}.
+	 *
+	 * @param nodeName
+	 * 		name of the {@literal Node} to forward events to
+	 *
+	 * @return {@literal this}
+	 */
 	@SuppressWarnings("unchecked")
 	public Route<T> routeTo(String nodeName) {
 		final Node<T> routeToNode = (Node<T>)node.getGraph().getNode(nodeName);
@@ -44,6 +55,14 @@ public class Route<T> {
 		return this;
 	}
 
+	/**
+	 * Consume events passing through this {@literal Route}.
+	 *
+	 * @param consumer
+	 * 		the {@literal Consumer} which will consume events
+	 *
+	 * @return {@literal this}
+	 */
 	public Route<T> consume(final Consumer<T> consumer) {
 		observable.on(onValue, new Consumer<Event<T>>() {
 			@Override
@@ -58,6 +77,16 @@ public class Route<T> {
 		return this;
 	}
 
+	/**
+	 * Transform events coming into this {@literal Route} by applying the given {@link reactor.function.Function}.
+	 *
+	 * @param fn
+	 * 		the transformation {@link reactor.function.Function}
+	 * @param <V>
+	 * 		the type of the returned event
+	 *
+	 * @return the new {@literal Route}
+	 */
 	@SuppressWarnings("unchecked")
 	public <V> Route<V> then(final Function<T, V> fn) {
 		final Route<V> newRoute = node.createRoute();
@@ -75,6 +104,12 @@ public class Route<T> {
 		return newRoute;
 	}
 
+	/**
+	 * Capture events coming into this {@literal Route} that have failed the {@link reactor.function.Predicate} test
+	 * which created this {@literal Route}.
+	 *
+	 * @return the new {@literal Route}
+	 */
 	public Route<T> otherwise() {
 		final Route<T> newRoute = node.createRoute();
 		observable.on(onOtherwise, new Consumer<Event<T>>() {
@@ -86,6 +121,11 @@ public class Route<T> {
 		return newRoute;
 	}
 
+	/**
+	 * End this {@literal Route} and go back to the {@literal Node} from which this {@literal Route} was created.
+	 *
+	 * @return the {@literal Node} from which this {@literal Route} was created
+	 */
 	@SuppressWarnings("unchecked")
 	private Node<T> end() {
 		return (Node<T>)node;

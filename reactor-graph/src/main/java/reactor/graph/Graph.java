@@ -15,11 +15,17 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * A {@code Graph} is a directed set of actions based on the <a href="http://en.wikipedia
- * .org/wiki/Directed_acyclic_graph">directed
- * acyclic graph concept</a>.
+ * A {@code Graph} is a directed set of actions based on the
+ * <a href="http://en.wikipedia.org/wiki/Directed_acyclic_graph">directed acyclic graph concept</a>.
  * <p>
- *
+ * A {@literal Graph} contains a set of {@link Node Nodes} linked together by {@link Route Routes}. Routing is
+ * controlled by assigning a {@link reactor.function.Predicate} which will notify the {@literal Node} of new values.
+ * Values that don't pass the {@literal Predicate} can be accessed from calling {@link reactor.graph.Route#otherwise()}
+ * and assigning actions to that {@literal Route}.
+ * </p>
+ * <p>
+ * {@literal Nodes} can be loosely-linked by creating them ahead of time and using the {@link Route#routeTo(String)}
+ * method to send an event to a specific, named {@literal Node}.
  * </p>
  *
  * @author Jon Brisbin
@@ -48,28 +54,102 @@ public class Graph<T> implements Consumer<T> {
 		);
 	}
 
+	/**
+	 * Create a {@literal Graph} with the given {@link reactor.core.Environment}.
+	 *
+	 * @param env
+	 * 		the {@link reactor.core.Environment} to use
+	 * @param <T>
+	 * 		the type of data coming into this {@literal Graph}
+	 *
+	 * @return the new {@literal Graph}
+	 */
 	public static <T> Graph<T> create(Environment env) {
 		return new Graph<T>(env, env.getDefaultDispatcher());
 	}
 
+	/**
+	 * Create a {@literal Graph} with the given {@link reactor.core.Environment} and assigning the given {@literal
+	 * Dispatcher} as a default if no other {@literal Dispatcher} is specified at {@literal Node} creation.
+	 *
+	 * @param env
+	 * 		the {@link reactor.core.Environment} to use
+	 * @param dispatcher
+	 * 		the {@link reactor.event.dispatch.Dispatcher} to use
+	 * @param <T>
+	 * 		the type of data coming into this {@literal Graph}
+	 *
+	 * @return the new {@literal Graph}
+	 */
 	public static <T> Graph<T> create(Environment env, String dispatcher) {
 		return new Graph<T>(env, env.getDispatcher(dispatcher));
 	}
 
+	/**
+	 * Create a {@literal Graph} with the given {@link reactor.core.Environment} and assigning the given {@literal
+	 * Dispatcher} as a default if no other {@literal Dispatcher} is specified at {@literal Node} creation.
+	 *
+	 * @param env
+	 * 		the {@link reactor.core.Environment} to use
+	 * @param dispatcher
+	 * 		the {@link reactor.event.dispatch.Dispatcher} to use
+	 * @param <T>
+	 * 		the type of data coming into this {@literal Graph}
+	 *
+	 * @return the new {@literal Graph}
+	 */
+	public static <T> Graph<T> create(Environment env, Dispatcher dispatcher) {
+		return new Graph<T>(env, dispatcher);
+	}
+
+	/**
+	 * Use the named {@literal Node} as the initial, starting {@literal Node} when new data comes into the {@literal
+	 * Graph}.
+	 *
+	 * @param name
+	 * 		the {@literal Node} to use as the {@literal Node} which receives incoming data
+	 *
+	 * @return {@literal this}
+	 */
 	public Graph<T> startNode(String name) {
 		Node<T> node = getNode(name);
 		this.startNode = node;
 		return this;
 	}
 
+	/**
+	 * Create a new {@literal Node} in this {@literal Graph} with a generated, UUID name.
+	 *
+	 * @return the new {@literal Node}
+	 */
 	public Node<T> node() {
 		return node(UUIDUtils.create().toString(), null);
 	}
 
+	/**
+	 * Create a new {@literal Node} in this {@literal Graph} with the given name.
+	 *
+	 * @param name
+	 * 		the name of the new {@literal Node}
+	 *
+	 * @return the new {@literal Node}
+	 */
 	public Node<T> node(String name) {
 		return node(name, null);
 	}
 
+	/**
+	 * Create a new {@literal Node} in this {@literal Graph} with the given name and using the given {@literal
+	 * Dispatcher}
+	 * when dispatching tasks.
+	 *
+	 * @param name
+	 * 		the name of the new {@literal Node}
+	 * @param dispatcher
+	 * 		the {@literal Dispatcher} to use
+	 *
+	 * @return the new {@literal Node}
+	 */
 	public Node<T> node(String name, Dispatcher dispatcher) {
 		Assert.isTrue(!nodes.containsKey(name), "A Node is already created with name '" + name + "'");
 		Dispatcher d = (null != dispatcher ? dispatcher : defaultDispatcher);
