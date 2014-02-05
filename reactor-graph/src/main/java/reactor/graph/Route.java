@@ -4,7 +4,6 @@ import reactor.core.Observable;
 import reactor.event.Event;
 import reactor.event.selector.Selector;
 import reactor.event.selector.Selectors;
-import reactor.event.support.EventConsumer;
 import reactor.function.Consumer;
 import reactor.function.Function;
 
@@ -14,95 +13,82 @@ import reactor.function.Function;
 public class Route<T> {
 
 	private final Selector onValue     = Selectors.anonymous();
-	private final Selector onError     = Selectors.anonymous();
 	private final Selector onOtherwise = Selectors.anonymous();
+	private final Selector onError     = Selectors.anonymous();
 
 	private final Node<?>    node;
 	private final Observable observable;
-	private final Route<?>   parent;
 
-	Route(Node<?> node, Observable observable, Route<?> parent) {
+	Route(Node<?> node, Observable observable) {
 		this.node = node;
 		this.observable = observable;
-		this.parent = (null != parent ? parent : this);
 	}
 
+	@SuppressWarnings("unchecked")
 	public Route<T> routeTo(String nodeName) {
-		final Node<?> routeToNode = node.getGraph().getNode(nodeName);
-		observable.on(onValue, new Consumer<Event<?>>() {
+		final Node<T> routeToNode = (Node<T>)node.getGraph().getNode(nodeName);
+		observable.on(onValue, new Consumer<Event>() {
 			@SuppressWarnings("unchecked")
 			@Override
 			public void accept(Event ev) {
 				routeToNode.notifyValue(ev);
 			}
 		});
+		observable.on(onError, new Consumer<Event>() {
+			@SuppressWarnings("unchecked")
+			@Override
+			public void accept(Event ev) {
+				routeToNode.notifyError(ev);
+			}
+		});
 		return this;
 	}
 
-	public <X extends Throwable> Route<X> when(final Class<X> errorType) {
-		final Route<X> route = new Route<X>(node, observable, this);
-		observable.on(onError, new Consumer<Event<Throwable>>() {
-			@SuppressWarnings("unchecked")
-			@Override
-			public void accept(Event<Throwable> ev) {
-				if(errorType.isInstance(ev.getData())) {
-					route.notifyValue((Event<X>)ev);
-				}
-			}
-		});
-		return route;
-	}
-
-	public Route<T> then(Consumer<T> consumer) {
-		observable.on(onValue, new EventConsumer<T>(consumer));
-		return this;
-	}
-
-	public <V> Route<V> then(final Function<T, V> fn) {
-		final Route<V> route = new Route<V>(node, observable, this);
+	public Route<T> consume(final Consumer<T> consumer) {
 		observable.on(onValue, new Consumer<Event<T>>() {
-			@SuppressWarnings("unchecked")
-			@Override
-			public void accept(Event<T> ev) {
-				try {
-					V obj = fn.apply(ev.getData());
-					Event<V> newEv = node.getGraph().getEventFactory().get().setData(obj);
-					route.notifyValue(newEv);
-				} catch(Throwable t) {
-					Event<Throwable> evx = node.getGraph().getEventFactory().get().setData(t);
-					observable.notify(onError, evx);
-				}
-			}
-		});
-		return route;
-	}
-
-	public Route<T> otherwise() {
-		final Route<T> route = new Route<T>(node, observable, this);
-		observable.on(parent.onOtherwise, new Consumer<Event<T>>() {
-			@Override
-			public void accept(Event<T> ev) {
-				route.notifyValue(ev);
-			}
-		});
-		return route;
-	}
-
-	@SuppressWarnings("unchecked")
-	public <V> Route<V> end(final Consumer<T> consumer) {
-		observable.on(onValue, new Consumer<Event<T>>() {
-			@SuppressWarnings("unchecked")
 			@Override
 			public void accept(Event<T> ev) {
 				try {
 					consumer.accept(ev.getData());
 				} catch(Throwable t) {
-					Event<Throwable> evx = node.getGraph().getEventFactory().get().setData(t);
-					observable.notify(onError, evx);
+					node.notifyError(ev.copy(t));
 				}
 			}
 		});
-		return (Route<V>)parent;
+		return this;
+	}
+
+	@SuppressWarnings("unchecked")
+	public <V> Route<V> then(final Function<T, V> fn) {
+		final Route<V> newRoute = node.createRoute();
+		observable.on(onValue, new Consumer<Event<T>>() {
+			@Override
+			public void accept(Event<T> ev) {
+				try {
+					V obj = fn.apply(ev.getData());
+					newRoute.notifyValue(ev.copy(obj));
+				} catch(Throwable t) {
+					newRoute.notifyError(ev.copy(t));
+				}
+			}
+		});
+		return newRoute;
+	}
+
+	public Route<T> otherwise() {
+		final Route<T> newRoute = node.createRoute();
+		observable.on(onOtherwise, new Consumer<Event<T>>() {
+			@Override
+			public void accept(Event<T> ev) {
+				newRoute.notifyValue(ev);
+			}
+		});
+		return newRoute;
+	}
+
+	@SuppressWarnings("unchecked")
+	private Node<T> end() {
+		return (Node<T>)node;
 	}
 
 	void notifyValue(Event<T> ev) {
@@ -111,6 +97,10 @@ public class Route<T> {
 
 	void notifyOtherwise(Event<T> ev) {
 		observable.notify(onOtherwise.getObject(), ev);
+	}
+
+	void notifyError(Event<Throwable> ev) {
+		observable.notify(onError.getObject(), ev);
 	}
 
 }

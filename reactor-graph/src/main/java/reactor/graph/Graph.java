@@ -15,6 +15,13 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
+ * A {@code Graph} is a directed set of actions based on the <a href="http://en.wikipedia
+ * .org/wiki/Directed_acyclic_graph">directed
+ * acyclic graph concept</a>.
+ * <p>
+ *
+ * </p>
+ *
  * @author Jon Brisbin
  */
 public class Graph<T> implements Consumer<T> {
@@ -49,7 +56,7 @@ public class Graph<T> implements Consumer<T> {
 		return new Graph<T>(env, env.getDispatcher(dispatcher));
 	}
 
-	public Graph<T> startIn(String name) {
+	public Graph<T> startNode(String name) {
 		Node<T> node = getNode(name);
 		this.startNode = node;
 		return this;
@@ -63,11 +70,11 @@ public class Graph<T> implements Consumer<T> {
 		return node(name, null);
 	}
 
-	public Node<T> node(String name, String dispatcher) {
+	public Node<T> node(String name, Dispatcher dispatcher) {
 		Assert.isTrue(!nodes.containsKey(name), "A Node is already created with name '" + name + "'");
-		Dispatcher d = (null != dispatcher ? env.getDispatcher(dispatcher) : defaultDispatcher);
+		Dispatcher d = (null != dispatcher ? dispatcher : defaultDispatcher);
 		Reactor reactor = Reactors.reactor(env, d);
-		Node<T> node = new Node<T>(name, this, reactor);
+		Node<T> node = new Node<T>(name, this, reactor, null);
 		nodes.put(name, node);
 		return node;
 	}
@@ -78,7 +85,7 @@ public class Graph<T> implements Consumer<T> {
 		if(null == startNode && nodes.size() == 1) {
 			startNode = nodes.values().iterator().next();
 		}
-		Assert.notNull(startNode, "No initial starting Node specified. Call Graph.startIn(String) to set one.");
+		Assert.notNull(startNode, "No initial starting Node specified. Call Graph.startNode(String) to set one.");
 		startNode.notifyValue(eventFactory.get().setData(t));
 	}
 
@@ -98,4 +105,5 @@ public class Graph<T> implements Consumer<T> {
 				", startNode=" + startNode +
 				'}';
 	}
+
 }

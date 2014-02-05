@@ -2,7 +2,6 @@ package reactor.graph
 
 import reactor.core.Environment
 import reactor.function.Consumer
-import reactor.function.Predicate
 import spock.lang.Specification
 
 /**
@@ -24,10 +23,10 @@ class GraphsSpec extends Specification {
 
 		when: "a Node and Route is defined and data is accepted"
 			graph.node().
-					when({ String s -> s.startsWith("Hello") } as Predicate<String>).
-					end({ s -> length = s.size() }).
+					when({ String s -> s.startsWith("Hello") }).
+					consume({ s -> length = s.size() }).
 					otherwise().
-					end({ s -> otherwiseLength = s.size() })
+					consume({ s -> otherwiseLength = s.size() })
 			graph.accept("Hello World!")
 			graph.accept("Goodbye World!")
 
@@ -44,14 +43,14 @@ class GraphsSpec extends Specification {
 			Graph<String> graph = Graph.create(env, "sync")
 
 		when: "Routes are defined that transfer control from one to another"
-			graph.node("count.hello").then({ s -> helloLength = s.size() })
-			graph.node("count.goodbye").then({ s -> goodbyeLength = s.size() })
+			graph.node("count.hello").consume({ s -> helloLength = s.size() })
+			graph.node("count.goodbye").consume({ s -> goodbyeLength = s.size() })
 			graph.node("start").
-					when({ s -> s.startsWith("Hello") } as Predicate<String>).
+					when({ String s -> s.startsWith("Hello") }).
 					routeTo("count.hello").
 					otherwise().
 					routeTo("count.goodbye")
-			graph.startIn("start")
+			graph.startNode("start")
 			graph.accept("Hello World!")
 			graph.accept("Goodbye World!")
 
@@ -69,8 +68,8 @@ class GraphsSpec extends Specification {
 
 		when: "Routes are defined which produce exceptions"
 			graph.node().
-					then({ s -> Integer.parseInt(s) } as Consumer<String>).
-					uncaught(NumberFormatException).<String> end({ t -> errorCount++ } as Consumer<NumberFormatException>)
+					consume({ s -> Integer.parseInt(s) } as Consumer<String>).
+					when(NumberFormatException).consume({ t -> errorCount++ })
 			graph.accept("Hello World!")
 
 		then: "error count was incremented"
